@@ -658,7 +658,7 @@ function renderMonth(v) {
     }).join('');
     cells += `<div class="md ${d.getMonth() !== first.getMonth() ? 'out' : ''} ${iso === today ? 'today' : ''} ${closed ? 'closed' : ''}" data-goto="${iso}" title="Open week">
       <div class="top"><span class="num">${d.getDate()}</span>${tag ? `<span class="daytag"><span class="chip ${tag.cls}">${tag.label}</span></span>` : ''}</div>
-      ${closed ? `<div class="mini muted"><i>${esc(closed.title)}</i></div>` : ''}${minis}
+      ${closed ? `<div class="mini muted"><span class="tx"><i>${esc(closed.title)}</i></span></div>` : ''}${minis}
       ${shown.length > max ? `<div class="mini more">+${shown.length - max} more</div>` : ''}
     </div>`;
   }
