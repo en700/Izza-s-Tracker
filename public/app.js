@@ -2145,8 +2145,7 @@ function openPrint() {
       <label class="field">Sheet<select id="pr-sheet">
         <option value="planner">Weekly planner — timetable + a notes section per class (1 week per page)</option>
         <option value="notes">Course notes sheet — the whole page is note blocks, one per class (1 week per page)</option>
-        <option value="list">Timetable only — compact list (fewest pages)</option>
-        <option value="grid">Timetable only — time grid (2 weeks per page)</option></select></label>
+        <option value="timetable">Full-page timetable — the planner's timetable on the whole page, no note blocks (1 week per page)</option></select></label>
       <label class="field">Weeks<select id="pr-range">
         <option value="week">This week</option><option value="next">Next week</option><option value="next4">This week + next 3</option>
         <option value="month">This month</option><option value="rest">Rest of the term</option><option value="term">Whole term</option>
@@ -2178,10 +2177,12 @@ function openPrint() {
     const [a, b] = getRange();
     const weeks = Math.max(1, Math.ceil((D.diffDays(D.iso(a), D.iso(b)) + 1) / 7));
     const sheet = $('#pr-sheet').value;
-    const pages = sheet === 'planner' || sheet === 'notes' ? weeks : Math.ceil(weeks / (sheet === 'grid' ? 2 : 3.1));
-    const about = `${weeks} week${weeks > 1 ? 's' : ''} → ${sheet === 'list' ? 'about ' : ''}${pages} page${pages > 1 ? 's' : ''}.`;
+    const pages = weeks;
+    const about = `${weeks} week${weeks > 1 ? 's' : ''} → ${pages} page${pages > 1 ? 's' : ''}.`;
     $('#pr-hint').innerHTML = sheet === 'planner'
       ? `${about} A large timetable where every class has ☐ Prep ☐ Att ☐ Rev boxes and every event or due item a ☐ (already ticked ☑ if done here), then an empty lined notes box for each class plus a <i>Reminders & to-do</i> box.`
+      : sheet === 'timetable'
+        ? `${about} The weekly timetable stretched over the whole page, with the same ☐ Prep ☐ Att ☐ Rev and ☐ done boxes, class notes and carpool status — no note blocks.`
       : sheet === 'notes'
         ? `${about} A full page of lined note blocks — one for each class you have that week (with its class times), plus a <i>Reminders & to-do</i> block.`
         : about;
@@ -2234,29 +2235,23 @@ function buildPrint(from, to, opts) {
     return `<div class="ph ${tag?.cls === 'off' ? 'off' : ''}">${DAY3[i]} ${d.getDate()}${tag && tag.cls !== 'off' ? ` <span>· ${tag.label}</span>` : ''}</div>`;
   }).join('');
 
-  const listHTML = (days) => `<div class="p-list" style="--pcols:${cols}">${dayHeads(days)}${days.map((iso) => `<div>${entries(iso).map((e) => {
-    if (isClosure(e)) return `<div class="closedcell">${esc(e.title)}</div>`;
-    if (e.src === 'i' && !isTimed(e)) return `<div class="pe none" style="--c:${entryColor(e)}">${e.item.done ? '☑' : '☐'} <b>${e.item.kind === 'assignment' ? 'Due: ' : ''}${esc(e.title)}</b>${e.start ? ` <span class="pt">${itemTime(e.item)}</span>` : ''}</div>`;
-    const n = noteOf(e);
-    return `<div class="pe ${modeClass(e.mode)} ${isExam(e) ? 'exam' : ''}" style="--c:${entryColor(e)};${e.rel === 'other' ? 'opacity:.55' : ''}">
-      <span class="pt">${fmtRange(e.start, e.end)}</span> <b>${esc(short(e))}</b><div class="pm">${esc(extra(e))}</div>${n ? `<div class="pn">✎ ${esc(clip(n, 160))}</div>` : ''}</div>`;
-  }).join('')}</div>`).join('')}</div>`;
-
-  const gridHTML = (days, list, maxMM) => {
+  const gridHTML = (days, list, maxMM, cap = 7) => {
     const timed = list.filter(isTimed);
     const lo = Math.floor(Math.min(480, ...timed.map((e) => D.mins(e.start))) / 60) * 60;
     const hi = Math.ceil(Math.max(1020, ...timed.map((e) => D.mins(e.end))) / 60) * 60;
     const nrows = (hi - lo) / 30;
-    const rowMM = Math.max(2.2, Math.min(7, maxMM / nrows));
+    const rowMM = Math.max(2.2, Math.min(cap, maxMM / nrows));
     const px = (m) => ((m - lo) / 30) * rowMM;
     let times = '';
     for (let m = lo; m <= hi; m += 60) times += `<span style="top:${px(m)}mm">${fmtTime(D.hm(m), false)}</span>`;
+    // Due dates and all-day items get their own row under the day headers (never covering classes).
+    const pillsFor = (iso) => entries(iso).filter((e) => !isTimed(e) && !isClosure(e)).map((e) => `<div class="${e.item?.done ? 'pdone' : ''}">${e.item?.done ? '☑' : '☐'} ${e.item?.kind === 'assignment' ? '<b>Due</b> ' : ''}${e.start ? itemTime(e.item) + ' ' : ''}${esc(e.title)}</div>`).join('');
+    const pillRow = days.map(pillsFor);
+    const alldayHTML = pillRow.some(Boolean) ? `<div class="pad-lbl">Due</div>${pillRow.map((h) => `<div class="pad">${h}</div>`).join('')}` : '';
     const pcols = days.map((iso) => {
       const dl = entries(iso);
       const closed = dayClosed(iso);
-      const pills = dl.filter((e) => !isTimed(e) && !isClosure(e)).map((e) => `<span class="${e.item?.done ? 'pdone' : ''}">${e.item?.done ? '☑' : '☐'} ${e.item?.kind === 'assignment' ? '<b>Due</b> ' : ''}${e.start ? itemTime(e.item) + ' ' : ''}${esc(e.title)}</span>`).join('<br>');
       return `<div class="pcol ${closed ? 'closed' : ''}">${closed ? `<div class="pclosed">${esc(closed.title)}</div>` : ''}
-        ${pills ? `<div class="ppills">${pills}</div>` : ''}
         ${layoutColumns(dl.filter(isTimed)).map((e) => {
           const w = 100 / (e._lanes || 1), l = (e._lane || 0) * w, h = px(D.mins(e.end)) - px(D.mins(e.start));
           const n = noteOf(e);
@@ -2269,7 +2264,7 @@ function buildPrint(from, to, opts) {
             <b>${lead}${esc(short(e))}${n && h <= rowMM * 5.5 ? ' ✎' : ''}</b>${h > rowMM * 2 ? `<span class="pm">${fmtRange(e.start, e.end)}</span>` : ''}${h > rowMM * 3 ? `<div class="pm">${esc(extra(e))}</div>` : ''}${h > rowMM * 3 ? checks : ''}${n && h > rowMM * 5.5 ? `<div class="pn">✎ ${esc(clip(n, 140))}</div>` : ''}</div>`;
         }).join('')}</div>`;
     }).join('');
-    return `<div class="p-grid" style="--pcols:${cols};--prow:${rowMM}mm;--nrows:${nrows}"><div class="ph"></div>${dayHeads(days)}<div class="ptimes">${times}</div>${pcols}</div>`;
+    return `<div class="p-grid" style="--pcols:${cols};--prow:${rowMM}mm;--nrows:${nrows}"><div class="ph"></div>${dayHeads(days)}${alldayHTML}<div class="ptimes">${times}</div>${pcols}</div>`;
   };
 
   // An empty notes box per class (plus one general box): everything trackable is in the timetable above.
@@ -2303,19 +2298,15 @@ function buildPrint(from, to, opts) {
       const list = weekEntries(days);
       return `<div class="p-page planner ${i < weeks.length - 1 ? 'break' : ''}">
         ${pageHead(weekTitle(days), groupLine)}
-        ${gridHTML(days, list, 122)}
+        ${gridHTML(days, list, list.some((e) => !isTimed(e) && !isClosure(e)) ? 110 : 122)}
         ${blocksHTML(days, list)}</div>`;
     }).join('');
     return;
   }
 
-  // Timetable-only sheets: weeks flow onto pages (never split); each week carries
-  // its own one-line legend so whatever page it lands on, the key matches it.
-  root.innerHTML = pageHead(weeks.length > 1 ? `${weeks.length} weeks` : 'week', groupLine) + weeks.map((days) => {
-    const list = weekEntries(days);
-    return `<section class="p-week ${opts.sheet === 'grid' ? 'grid' : ''}"><div class="p-wh"><h4>${weekTitle(days)}</h4></div>
-      ${opts.sheet === 'grid' ? gridHTML(days, list, 70) : listHTML(days)}</section>`;
-  }).join('');
+  // Full-page timetable: the planner's grid with the whole page to itself.
+  root.innerHTML = weeks.map((days, i) => `<div class="p-page planner full-tt ${i < weeks.length - 1 ? 'break' : ''}">
+      ${pageHead(weekTitle(days), groupLine)}${gridHTML(days, weekEntries(days), weekEntries(days).some((e) => !isTimed(e) && !isClosure(e)) ? 162 : 176, 9)}</div>`).join('');
 }
 window.addEventListener('afterprint', () => { $('#print-root').innerHTML = ''; });
 

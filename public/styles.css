@@ -675,7 +675,7 @@ input, select, textarea {
   html, body { background: #fff !important; color: #000; }
   :root { --card: #fff; --card-2: #f6f7f9; --text: #111; --muted: #555; --line: #bbb; --line-2: #ddd; --closed: #eceef1; --tint: 24%; }
   body * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  #app, #modal-root, #toast, .fab { display: none !important; }
+  #app, #modal-root, #toast, .fab, .fx, .qc-pop, .scope-backdrop, .modal-backdrop { display: none !important; }
   #print-root { display: block; }
 }
 .p-page.break { break-after: page; page-break-after: always; }
@@ -684,29 +684,14 @@ input, select, textarea {
 .p-head h3 { margin: 0; font-size: 11pt; color: #111; }
 .p-head h3 span { font-weight: 600; }
 .p-head .wk { font-size: 7.5pt; font-weight: 600; color: #555; margin-left: 2mm; }
-.p-week { break-inside: avoid; page-break-inside: avoid; margin-bottom: 3mm; }
-.p-week h4 { margin: 0; font-size: 8.5pt; white-space: nowrap; }
-.p-head + .p-week { margin-top: 2mm; }
-.p-wh { display: flex; align-items: baseline; gap: 4mm; margin-bottom: .6mm; }
-.p-week.grid:nth-of-type(2n) { break-after: page; page-break-after: always; }
-.p-week h4 .wk { font-weight: 500; color: #333; font-size: 7pt; margin-left: 1.5mm; }
+/* grid layout */
 .ph span { font-weight: 400; color: #333; }
 .pn { font-style: italic; color: #111; font-size: 5.8pt; white-space: pre-line; border-top: .2mm dotted #333; margin-top: .3mm; padding-top: .2mm; }
-/* list layout */
-.p-list { display: grid; grid-template-columns: var(--pcols); border: .25mm solid #999; }
-.p-list > div { border-left: .25mm solid #ccc; padding: .8mm 1mm; min-width: 0; }
-.p-list > div:first-child { border-left: 0; }
-.p-list .ph { background: #f1f3f5; font-weight: 700; border-bottom: .25mm solid #999; font-size: 7pt; }
-.p-list .ph.off { color: #444; }
-.p-list .pe { padding: .5mm .8mm .6mm 1.3mm; margin-bottom: .6mm; border-radius: .8mm; break-inside: avoid; }
-.p-list .pe.inperson { background: color-mix(in srgb, var(--c) 18%, #fff); border: .25mm solid #222; border-left: 1.1mm solid #000; }
-.p-list .pe.online { border: .35mm dashed #222; }
-.p-list .pe.unspecified, .p-list .pe.none { background: #f1f3f5; border: .2mm solid #999; }
-.p-list .pe.exam { border: .8mm double #000; }
-.p-list .pe .pt { color: #222; font-variant-numeric: tabular-nums; }
-.p-list .pe .pm { color: #333; font-size: 6pt; }
-.p-list .closedcell { color: #333; font-style: italic; }
-/* grid layout */
+.full-tt .p-grid .ph { font-size: 8.5pt; padding: 1mm 0; }
+.full-tt .p-grid .ptimes span { font-size: 7pt; }
+.full-tt .p-grid .pev { font-size: 7.4pt; padding: .6mm 1mm .5mm 1.4mm; }
+.full-tt .p-grid .pck { font-size: 6.8pt; }
+.full-tt .p-grid .pn { font-size: 6.6pt; }
 .p-grid { display: grid; grid-template-columns: 9mm var(--pcols); border: .25mm solid #999; flex: none; }
 .p-grid .ph { background: #f1f3f5; font-weight: 700; text-align: center; border-left: .25mm solid #ccc; border-bottom: .25mm solid #999; padding: .6mm 0; font-size: 7pt; }
 .p-grid .ph:first-child { border-left: 0; }
@@ -717,7 +702,10 @@ input, select, textarea {
 .p-grid .pcol { border-left: .25mm solid #999; background-image: linear-gradient(to bottom, #d5d8dc .2mm, transparent .2mm); background-size: 100% calc(var(--prow) * 2); }
 .p-grid .pcol.closed { background: repeating-linear-gradient(135deg, #bbb 0 .25mm, transparent .25mm 2mm); }
 .p-grid .pclosed { margin: 1mm; padding: .5mm; color: #222; font-style: italic; background: #fff; }
-.p-grid .ppills { position: absolute; bottom: .5mm; left: .5mm; right: .5mm; font-size: 5.5pt; }
+.p-grid .pad-lbl { font-size: 5.5pt; font-weight: 700; color: #333; text-align: right; padding: .6mm .8mm; border-bottom: .25mm solid #999; }
+.p-grid .pad { border-left: .25mm solid #999; border-bottom: .25mm solid #999; padding: .5mm .8mm; font-size: 5.8pt; line-height: 1.25; min-width: 0; }
+.p-grid .pad > div + div { margin-top: .3mm; }
+.full-tt .p-grid .pad, .full-tt .p-grid .pad-lbl { font-size: 6.8pt; }
 .p-grid .pev { position: absolute; overflow: hidden; border-radius: .7mm; padding: .3mm .6mm .3mm 1mm; font-size: 6pt; line-height: 1.15; }
 .p-grid .pev.inperson { background: color-mix(in srgb, var(--c) 20%, #fff); border: .25mm solid #222; border-left: 1.1mm solid #000; }
 .p-grid .pev.online { background: #fff; border: .35mm dashed #222; }

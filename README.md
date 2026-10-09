@@ -53,7 +53,8 @@ A password-protected timetable and school-year tracker for the dental hygiene pr
     notes box for each class and a *Reminders & to-do* box.
   - *Course notes sheet* (1 page per week): the whole page is lined note blocks, one per class that week (with its class
     times), plus a *Reminders & to-do* block that stretches over any spare space.
-  - *Compact list* (whole term ≈ 8 pages) and *Time grid* (2 weeks per page) for timetable-only printouts.
+  - *Full-page timetable* (1 page per week): the planner's timetable stretched over the whole page, with the same tick boxes,
+    notes and carpool status, and no note blocks.
 - **Password protection** for every page, file and API call. Sessions last 30 days.
 
 **Home-screen app.** On iPhone, open the site in Safari and choose Share → *Add to Home Screen*. On Android, open it in Chrome and choose
