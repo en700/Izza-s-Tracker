@@ -127,7 +127,7 @@ async function loadSchedule() {
 }
 
 // Turn a level's courses + weekly periods into dated sessions, like the Level 1 timetable.
-function buildLevelSchedule(n, L) {
+function buildLevelSchedule(n, L, skip = new Set()) {
   const courses = Object.fromEntries((L.courses || []).map((c) => [c.code, c.name]));
   const sessions = [];
   const off = new Map();
@@ -145,7 +145,7 @@ function buildLevelSchedule(n, L) {
     const week0 = D.sow(D.parse(from));
     for (let d = D.parse(from); D.iso(d) <= until; d = D.add(d, 1)) {
       const iso = D.iso(d);
-      if (!p.days.includes(d.getDay()) || off.has(iso)) continue;
+      if (!p.days.includes(d.getDay()) || off.has(iso) || skip.has(iso)) continue;
       if ((p.every || 1) > 1 && Math.round((D.sow(d) - week0) / (7 * 864e5)) % p.every) continue;
       sessions.push({
         id: `p_${p.id}_${iso}`, src: 's', date: iso, start: p.start, end: p.end, code: c.code, course: c.name, title: c.name,
@@ -171,7 +171,8 @@ function ensureLevel() {
   levelSig = sig;
   if (n === 1) {
     // Official timetable plus any extra courses/periods added for Level 1.
-    const extra = L ? buildLevelSchedule(1, { ...L, start: BASE_L1.term.start, end: BASE_L1.term.end }) : null;
+    const closed = new Set(BASE_L1.sessions.filter((x) => x.kind === 'closure').map((x) => x.date));
+    const extra = L ? buildLevelSchedule(1, { ...L, start: BASE_L1.term.start, end: BASE_L1.term.end }, closed) : null;
     SCHED = !extra ? BASE_L1 : {
       term: BASE_L1.term,
       courses: { ...BASE_L1.courses, ...extra.courses },
@@ -361,6 +362,25 @@ function getMeta(id) { return data.sessionMeta[id] || {}; }
 const attendBox = (e) => (e.src === 's' && !isClosure(e) && e.start
   ? `<span class="att-box ${getMeta(e.id).attended ? 'on' : ''}" role="checkbox" tabindex="0" aria-checked="${!!getMeta(e.id).attended}" data-attend="${esc(e.id)}" title="${getMeta(e.id).attended ? 'Attended — click to undo' : 'Mark attended'}"><span class="att-tick">✓</span><span class="att-lbl">Attended</span></span>`
   : '');
+// Carpool status on in-person classes: one tap flips between two user-chosen labels/colours.
+const DEFAULT_CARPOOL = { onText: 'Carpool', offText: 'No carpool', onColor: '#2f9e44', offColor: '#adb5bd' };
+const carpoolCfg = () => ({ ...DEFAULT_CARPOOL, ...(data.settings.carpool || {}) });
+// In-person classes and in-person calendar events; repeating events keep a status per occurrence.
+const hasCarpool = (e) => e.mode === 'in-person' && !isClosure(e) && !!e.start && (e.src === 's' || isTimed(e));
+const carpoolKey = (e) => (e.src === 's' ? e.id : `${e.id}@${e.occ || e.date}`);
+function carpoolChip(e) {
+  if (!hasCarpool(e)) return '';
+  const on = !!getMeta(carpoolKey(e)).carpool, cp = carpoolCfg();
+  return `<span class="cp-chip ${on ? 'on' : ''}" role="switch" tabindex="0" aria-checked="${on}" data-carpool="${esc(carpoolKey(e))}" style="--cp:${esc(on ? cp.onColor : cp.offColor)}"
+    title="${esc(on ? cp.onText : cp.offText)} — click to switch to “${esc(on ? cp.offText : cp.onText)}”"><span class="cp-car">🚗</span><span class="cp-txt">${esc(on ? cp.onText : cp.offText)}</span></span>`;
+}
+const carpoolText = (e) => (hasCarpool(e) ? (getMeta(carpoolKey(e)).carpool ? carpoolCfg().onText : carpoolCfg().offText) : '');
+function toggleCarpool(id) {
+  const on = !getMeta(id).carpool;
+  setMeta(id, { carpool: on });
+  commit();
+  toast(`🚗 ${on ? carpoolCfg().onText : carpoolCfg().offText}`);
+}
 function toggleAttended(id) {
   const on = !getMeta(id).attended;
   setMeta(id, { attended: on });
@@ -589,6 +609,7 @@ function legendHTML() {
         <tr><td><span class="chip mine">${rad}</span></td><td>Your group</td></tr>
         <tr><td><span class="chip exam">EXAM</span></td><td>Exam / test</td></tr>
         <tr><td class="ico">${ICON.note}</td><td>Has class notes</td></tr>
+        <tr><td><span class="cp-chip on" style="--cp:${esc(carpoolCfg().onColor)}"><span class="cp-car">🚗</span></span><span class="cp-chip" style="--cp:${esc(carpoolCfg().offColor)}"><span class="cp-car">🚗</span></span></td><td>${esc(carpoolCfg().onText)} / ${esc(carpoolCfg().offText)} (in-person classes — tap to flip)</td></tr>
         <tr><td class="ico" style="color:var(--ok);font-weight:800">✓</td><td>Attended</td></tr>
       </tbody>
     </table>
@@ -687,7 +708,7 @@ function evBlockHTML(e, top, height) {
     ${chips ? `<div class="chips">${groupChip(e)}</div>` : ''}
     ${detailLines ? `<div class="ev-detail" style="-webkit-line-clamp:${detailLines}">${esc(detail)}</div>` : ''}
     ${noteLines >= 1 ? `<div class="ev-note" style="-webkit-line-clamp:${noteLines}">${ICON.note} ${esc(note)}</div>` : ''}
-    ${e.recurring ? '<span class="ev-rep" title="Repeating event">🔁</span>' : ''}${draggable ? '<span class="ev-resize" aria-hidden="true"></span>' : ''}${height >= 30 ? attendBox(e) : ''}
+    ${e.recurring ? '<span class="ev-rep" title="Repeating event">🔁</span>' : ''}${draggable ? '<span class="ev-resize" aria-hidden="true"></span>' : ''}${height >= 30 ? attendBox(e) : ''}${height >= 44 ? carpoolChip(e) : ''}
   </button>`;
 }
 
@@ -944,7 +965,7 @@ function rowEvHTML(e) {
   return `<div class="row-ev ${modeClass(e.mode)} ${e.rel === 'other' ? 'other' : ''} ${e.src === 's' ? 'has-att' : ''}" data-open="${esc(openKey(e))}" style="--c:${entryColor(e)}">${attendBox(e)}
     <div class="tm">${fmtRange(e.start, e.end)}</div>
     <div><div class="ti">${e.code ? `<span style="color:${entryColor(e)}">${codeLabel(e.code)}</span> ` : ''}${esc(entryTitle(e))}</div>
-    <div class="meta">${modeChip(e.mode)}${kindChip(e)}${groupChip(e)}${e.detail ? `<span>${esc(e.detail)}</span>` : ''}</div>
+    <div class="meta">${modeChip(e.mode)}${carpoolChip(e)}${kindChip(e)}${groupChip(e)}${e.detail ? `<span>${esc(e.detail)}</span>` : ''}</div>
     ${meta.note ? `<div class="row-note">${ICON.note} ${esc(meta.note)}</div>` : ''}</div>
   </div>`;
 }
@@ -1449,6 +1470,7 @@ function openSession(id) {
         <label class="check"><input type="checkbox" data-m="prepared" ${m.prepared ? 'checked' : ''}> Prepared / pre-reading done</label>
         <label class="check"><input type="checkbox" data-m="attended" ${m.attended ? 'checked' : ''}> Attended</label>
         <label class="check"><input type="checkbox" data-m="reviewed" ${m.reviewed ? 'checked' : ''}> Notes reviewed</label>
+        ${hasCarpool(s) ? `<label class="check"><input type="checkbox" data-m="carpool" ${m.carpool ? 'checked' : ''}> 🚗 ${esc(carpoolCfg().onText)} <span class="muted small">(off: ${esc(carpoolCfg().offText)})</span></label>` : ''}
       </div>
       <label class="field">Class notes
         <textarea id="ses-note" placeholder="Notes for this class — what was covered, homework mentioned, questions…">${esc(m.note || '')}</textarea></label>
@@ -1596,7 +1618,7 @@ function openItemEditor(seed = {}, { occ = null } = {}) {
         <label class="field" id="it-until-wrap">Ends<input type="date" id="it-until" value="${esc(r.until || '')}" title="Leave empty to repeat with no end date"></label>
       </div>
       <div class="grid-2" id="it-where-wrap">
-        <label class="field">Where<select id="it-mode"><option value="">Not specified</option><option value="in-person">In person</option><option value="online">Online</option></select></label>
+        <label class="field">Where <span class="muted">(in person → 🚗 carpool tag)</span><select id="it-mode"><option value="">Not specified</option><option value="in-person">In person</option><option value="online">Online</option></select></label>
         <label class="field">Location / link<input type="text" id="it-loc" value="${esc(it.location || '')}" placeholder="Room 204, Zoom link…"></label>
       </div>
       <label class="field">Notes<textarea id="it-notes" placeholder="Instructions, links, page numbers…">${esc(it.notes || '')}</textarea></label>
@@ -1809,6 +1831,11 @@ function openSettings() {
         <label class="field">Clock<select id="st-clock"><option value="12">12-hour</option><option value="24">24-hour</option></select></label>
         <label class="field">Density<select id="st-density"><option value="normal">Comfortable</option><option value="compact">Compact</option></select></label>
       </div>
+      <div class="section-title" style="margin:6px 0 0">🚗 Carpool label (in-person classes)</div>
+      <div class="cp-settings">
+        <label class="field">When on<span class="cp-set"><input type="color" id="st-cp-oncolor" value="${esc(carpoolCfg().onColor)}" aria-label="Colour when on"><input type="text" id="st-cp-ontext" value="${esc(carpoolCfg().onText)}" maxlength="24"></span></label>
+        <label class="field">When off<span class="cp-set"><input type="color" id="st-cp-offcolor" value="${esc(carpoolCfg().offColor)}" aria-label="Colour when off"><input type="text" id="st-cp-offtext" value="${esc(carpoolCfg().offText)}" maxlength="24"></span></label>
+      </div>
       <label class="check small"><input type="checkbox" id="st-fun" ${st.fun !== false ? 'checked' : ''}> Hearts & stars burst out of some clicks ♥★</label>
       <div class="section-title" style="margin:6px 0 0">Levels</div>
       <div class="card level-list">${[...Array(MAX_LEVEL)].map((_, i) => {
@@ -1839,6 +1866,13 @@ function openSettings() {
     commit();
   };
   $$('select', modal).forEach((s) => (s.onchange = upd));
+  const saveCarpool = () => {
+    data.settings.carpool = { onColor: $('#st-cp-oncolor').value, offColor: $('#st-cp-offcolor').value,
+      onText: $('#st-cp-ontext').value.trim() || DEFAULT_CARPOOL.onText, offText: $('#st-cp-offtext').value.trim() || DEFAULT_CARPOOL.offText };
+    data.settingsUpdatedAt = Date.now();
+    commit();
+  };
+  ['#st-cp-oncolor', '#st-cp-offcolor', '#st-cp-ontext', '#st-cp-offtext'].forEach((sel) => ($(sel).onchange = saveCarpool));
   $('#st-fun').onchange = (e) => { data.settings.fun = e.target.checked; data.settingsUpdatedAt = Date.now(); commit({ rerender: false }); if (e.target.checked) burst(innerWidth / 2, innerHeight / 2); };
   $$('[data-edit-level]', modal).forEach((b) => (b.onclick = () => openLevelWizard(+b.dataset.editLevel)));
   $$('[data-level]', modal).forEach((b) => b.addEventListener('click', () => closeModal()));
@@ -2178,7 +2212,7 @@ function buildPrint(from, to, opts) {
   const clip = (s, n) => (s.length > n ? s.slice(0, n).trimEnd() + '…' : s);
   // Black-and-white friendly: exams are named in the title, not just outlined.
   const short = (e) => (e.kind === 'exam' ? 'EXAM · ' : e.kind === 'test' ? 'TEST · ' : '') + (e.code ? `${codeLabel(e.code)} ` : '') + entryTitle(e);
-  const extra = (e) => [modeLabel(e.mode), e.group ? groupLabel(e) : '',
+  const extra = (e) => [modeLabel(e.mode), hasCarpool(e) ? `🚗 ${carpoolText(e)}` : '', e.group ? groupLabel(e) : '',
     e.detail && e.kind !== 'exam' && e.kind !== 'test' ? e.detail : ''].filter(Boolean).join(' · ');
   const sundayEmpty = weeks.every((w) => !entries(w[0]).length);
   const cols = [...Array(7)].map((_, i) => (i === 0 && sundayEmpty ? '.42fr' : '1fr')).join(' ');
@@ -2249,7 +2283,7 @@ function buildPrint(from, to, opts) {
     const sesLine = (s) => {
       const m = getMeta(s.id);
       const n = noteOf(s);
-      return `<div class="nb-ses"><div class="nb-row"><span class="nb-when">${DAY3[D.parse(s.date).getDay()]} ${D.parse(s.date).getDate()} · ${fmtRange(s.start, s.end)}${isExam(s) ? ` <span class="nb-exam">${s.kind === 'test' ? 'TEST' : 'EXAM'}</span>` : ''}${s.group ? ` <span class="nb-grp">${esc(groupLabel(s))}</span>` : ''}${s.mode === 'online' ? ' <span class="nb-mode">online</span>' : ''}</span>
+      return `<div class="nb-ses"><div class="nb-row"><span class="nb-when">${DAY3[D.parse(s.date).getDay()]} ${D.parse(s.date).getDate()} · ${fmtRange(s.start, s.end)}${isExam(s) ? ` <span class="nb-exam">${s.kind === 'test' ? 'TEST' : 'EXAM'}</span>` : ''}${s.group ? ` <span class="nb-grp">${esc(groupLabel(s))}</span>` : ''}${s.mode === 'online' ? ' <span class="nb-mode">online</span>' : ''}${hasCarpool(s) ? ` <span class="nb-mode">· 🚗 ${esc(carpoolText(s))}</span>` : ''}</span>
         <span class="nb-cks">${ck(m.prepared, 'Prep')}${ck(m.attended, 'Att')}${ck(m.reviewed, 'Rev')}</span></div>
         ${n ? `<div class="nb-note">✎ ${esc(clip(n, 260))}</div>` : ''}</div>`;
     };
@@ -2566,6 +2600,8 @@ function navigate(dir) {
 
 document.addEventListener('click', (e) => {
   if (e.target.matches('[data-toggle]')) return;
+  const cpEl = e.target.closest('[data-carpool]');
+  if (cpEl) { e.preventDefault(); e.stopPropagation(); return toggleCarpool(cpEl.dataset.carpool); }
   const att = e.target.closest('[data-attend]');
   if (att) { e.preventDefault(); e.stopPropagation(); return toggleAttended(att.dataset.attend); }
   const t = e.target.closest('[data-action],[data-nav],[data-open],[data-add-date],[data-goto],[data-view],[data-level],[data-others],[data-courses-all],[data-legend]');
@@ -2622,6 +2658,7 @@ function pickDefaultDate() {
 
 document.addEventListener('keydown', (e) => {
   if ((e.key === ' ' || e.key === 'Enter') && e.target.matches?.('[data-attend]')) { e.preventDefault(); return toggleAttended(e.target.dataset.attend); }
+  if ((e.key === ' ' || e.key === 'Enter') && e.target.matches?.('[data-carpool]')) { e.preventDefault(); return toggleCarpool(e.target.dataset.carpool); }
   if (e.key === 'Escape') return closeModal();
   if ($('#modal-root').innerHTML || e.target.closest('input, textarea, select, [contenteditable]') || e.metaKey || e.ctrlKey || e.altKey) return;
   const k = e.key.toLowerCase();
