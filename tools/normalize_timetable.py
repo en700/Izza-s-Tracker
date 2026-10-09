@@ -7,6 +7,7 @@ COURSES = {
  'DH106': 'Radiography Theory', 'DH107': 'Communication Techniques', 'DH108': 'Microbiology & Infection Control',
  'DH109': 'Head & Neck Anatomy', 'DH110': 'Professional Issues I', 'DH111': 'Psychology for the Health Professional',
  'DH112': 'Oral Histology & Embryology', 'DH113': 'Radiography Lab',
+ 'L1O': 'Level 1 Orientation',
 }
 
 def instructors(t):
@@ -32,6 +33,7 @@ for r in raw:
     m = re.search(r'DH\s?(\d{3})', flat)
     code = 'DH' + m.group(1) if m else None
     if 'DH 101/DH 113' in flat: code = 'DH101'
+    if 'Orientation to L1' in flat: code = 'L1O'
     e['code'] = code
     e['course'] = COURSES.get(code)
     e['instructors'] = instructors(t)

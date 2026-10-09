@@ -14,18 +14,26 @@ A password-protected timetable and school-year tracker for Level 1 Dental Hygien
   group chip. Toggle **My groups / All groups** to hide other groups' sessions or show them faded.
   You can change your groups in Settings.
 - **Exams & tests** are outlined and badged. A countdown list appears on the Tasks page.
+- **Legend in the right margin** of the Week and Month views (and of every printed page). It lists the colour keys and
+  each course with its instructors.
 - **Month, Agenda and Courses views.** The Agenda is searchable and can be filtered by course.
-  Each Courses card shows instructors, sessions done, the next class, the next exam, and attendance.
+  Each Courses card shows instructors, sessions done, the next class, the next exam, attendance and the
+  weighted grade so far.
 - **Tracking.** Click any class to tick *Prepared*, *Attended* and *Notes reviewed*, and to write
-  class notes for that session.
+  class notes for that session. The notes then appear inside that class's time block on the timetable
+  (and on printouts).
+- **Deadlines (Tasks tab).** Every due date is listed in date order, with columns for Class, Name, Due date,
+  Status (Not started / In progress / Done), Grade and Weight, like the Notion tracker. Timetable exams
+  are included, and a line marks today. You can add more from the row at the bottom. The deadlines from the Notion
+  "CADH L1 – Deadline Tracker" are preloaded once.
 - **Notes.** Free-form notes you can tag with a course, pin and search. Class-session notes are
   also listed here.
 - **Assignments, due dates, events, exams and reminders.** Each one can have a checklist,
   a priority and file attachments. Use **Import** to load a `.ics` calendar (Brightspace/D2L,
   Google, Outlook), a `.csv` file or a backup. **Settings → Export calendar** downloads an `.ics`
   file of your schedule.
-- **Print.** Printouts are landscape and colour-coded. *Compact list* fits 3 weeks per page
-  (the whole term takes 9 pages, versus 24 in the original PDF). *Time grid* fits 1–2 weeks per page.
+- **Print.** Printouts are landscape and colour-coded. *Compact list* fills each page with as many
+  weeks as fit (the whole term takes about 8 pages, versus 24 in the original PDF). *Time grid* fits 1–2 weeks per page.
   You can print only your groups.
 - **Password protection** for every page, file and API call. Sessions last 30 days.
 

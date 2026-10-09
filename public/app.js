@@ -95,10 +95,12 @@ let SCHED = { term: {}, courses: {}, sessions: [] };
 const byDate = new Map();
 const byId = new Map();
 
+const COURSE_INSTR = {}; // code -> main instructors, most frequent first
 const COURSE_SHORT = {
   DH101: 'Preclinical Practice I', DH102: 'Practice Env I', DH103: 'Dental Anatomy', DH104: 'Client Mgmt & Education',
   DH105: 'Anatomy, Path & Patho', DH106: 'Rad Theory', DH107: 'Comm Techniques', DH108: 'Micro & Infection Ctrl',
   DH109: 'Head & Neck Anatomy', DH110: 'Prof Issues I', DH111: 'Psych for the HP', DH112: 'Oral Histo & Embryo', DH113: 'Rad Lab',
+  L1O: 'Level 1 Orientation',
 };
 const codeLabel = (c) => (c ? esc(c.replace(/^DH/, 'DH ')) : '');
 const courseColor = (c) => (c && SCHED.courses[c] ? `var(--${c})` : 'var(--PROGRAM)');
@@ -115,6 +117,13 @@ async function loadSchedule() {
     if (!byDate.has(s.date)) byDate.set(s.date, []);
     byDate.get(s.date).push(s);
     byId.set(s.id, s);
+  }
+  for (const code of Object.keys(SCHED.courses)) {
+    const ses = SCHED.sessions.filter((s) => s.code === code);
+    const count = new Map();
+    for (const s of ses) for (const n of s.instructors || []) count.set(n, (count.get(n) || 0) + 1);
+    // Skip people who only appear at a handful of special sessions.
+    COURSE_INSTR[code] = [...count].filter(([, n]) => n >= Math.max(1, ses.length * 0.2)).sort((a, b) => b[1] - a[1]).map(([n]) => n);
   }
 }
 
@@ -346,7 +355,8 @@ const ui = {
   agendaCourse: '',
   agendaQuery: '',
   agendaPast: false,
-  taskFilter: 'open',
+  taskFilter: 'all',
+  taskTimetable: true,
   taskCourse: '',
   taskKind: '',
   taskQuery: '',
@@ -378,7 +388,7 @@ function renderHeader() {
     html = `Week <b>${wk}</b> of ${totalWeeks} · ${Math.round(pct)}% through the term<div class="bar"><i style="width:${pct}%"></i></div>`;
   }
   $('#term-progress').innerHTML = html;
-  const open = data.items.filter((i) => !i.done && i.kind !== 'event').length;
+  const open = data.items.filter((i) => statusOf(i) !== 'done' && i.kind !== 'event').length;
   $('#task-count').textContent = open ? String(open) : '';
   $$('#tabs button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.view === ui.view)));
 }
@@ -403,16 +413,26 @@ function setView(view) {
 /* Week view                                                           */
 /* ================================================================== */
 function legendHTML() {
-  const codes = Object.keys(SCHED.courses);
-  return `<div class="legend">
-    <span class="sw"><span class="key inperson"></span>In person (solid)</span>
-    <span class="sw"><span class="key online"></span>Online (dashed)</span>
-    ${data.settings.others !== 'hide' ? '<span class="sw"><span class="key other"></span>Other group (faded)</span>' : ''}
-    <span class="sw"><span class="chip mine">A</span>Your group</span>
-    <span class="sw"><span class="chip exam">EXAM</span> / <span class="chip test">TEST</span></span>
-    ${codes.map((c) => `<span class="sw" style="--c:${courseColor(c)}"><span class="dot"></span>${codeLabel(c)} ${esc(COURSE_SHORT[c])}</span>`).join('')}
-  </div>`;
+  return `<aside class="side-legend card" aria-label="Legend">
+    <h3>Legend</h3>
+    <ul class="lg-keys">
+      <li><span class="key inperson"></span>In person</li>
+      <li><span class="key online"></span>Online</li>
+      ${data.settings.others !== 'hide' ? '<li><span class="key other"></span>Other group</li>' : ''}
+      <li><span class="chip mine">${esc(data.settings.radGroup)}</span>Your group</li>
+      <li><span class="chip exam">EXAM</span><span class="chip test">TEST</span></li>
+      <li><span class="lg-ico">${ICON.note}</span>Has class notes</li>
+      <li><span class="lg-ico" style="color:var(--ok);font-weight:800">✓</span>Attended</li>
+    </ul>
+    <h3>Courses & instructors</h3>
+    <ul class="lg-courses">${Object.keys(SCHED.courses).map((c) => `
+      <li style="--c:${courseColor(c)}"><span class="dot"></span><div>
+        <div><b>${codeLabel(c)}</b> ${esc(SCHED.courses[c])}</div>
+        <div class="ins">${esc((COURSE_INSTR[c] || []).join(', ') || 'Instructor TBA')}</div></div></li>`).join('')}
+    </ul>
+  </aside>`;
 }
+const withLegend = (main) => `<div class="with-legend"><div class="wl-main">${main}</div>${legendHTML()}</div>`;
 
 function weekSummary(days) {
   let campus = 0, online = 0, exams = 0;
@@ -454,19 +474,27 @@ function layoutColumns(evs) {
 
 function evBlockHTML(e, top, height) {
   const meta = e.src === 's' ? getMeta(e.id) : {};
+  const note = ((e.src === 's' ? meta.note : e.item?.notes) || '').trim();
   const cls = ['ev', modeClass(e.mode), e.rel === 'other' ? 'other' : '', e.kind === 'exam' || e.kind === 'test' ? e.kind : '',
     e.src === 'i' ? 'personal' : '', meta.attended ? 'done-check' : ''].join(' ');
   const w = 100 / (e._lanes || 1), l = (e._lane || 0) * w;
-  const tall = height >= 52, mid = height >= 34;
+  const mid = height >= 34;
   const code = e.code ? codeLabel(e.code) : e.src === 'i' ? 'Personal' : '';
   const icon = e.mode === 'online' ? ICON.online : e.mode === 'in-person' ? ICON.inperson : '';
   const label = `${code} ${entryTitle(e)}, ${fmtRange(e.start, e.end)}, ${modeLabel(e.mode)} ${e.group ? groupLabel(e) : ''}`;
-  return `<button class="${cls}" data-open="${e.src}:${esc(e.id)}" aria-label="${esc(label)}"
+  // Fill the remaining height with chips, then the class notes.
+  let room = height - 8 - 14 - 13 - (mid ? 28 : 0);
+  const chips = room >= 18 && (e.group || e.detail);
+  if (chips) room -= 18;
+  const noteLines = note ? Math.floor(room / 12) : 0;
+  return `<button class="${cls}" data-open="${e.src}:${esc(e.id)}" aria-label="${esc(label)}${note ? '. Notes: ' + esc(note.slice(0, 200)) : ''}"
+      title="${note ? esc(note.slice(0, 400)) : ''}"
       style="--c:${entryColor(e)};top:${top}px;height:${height - 2}px;left:calc(${l}% + 2px);width:calc(${w}% - 4px)">
-    <div class="t1">${code ? `<span class="code">${esc(code)}</span>` : ''}${icon}${kindChip(e)}</div>
+    <div class="t1">${code ? `<span class="code">${code}</span>` : ''}${icon}${kindChip(e)}${note && noteLines < 1 ? `<span class="note-ico">${ICON.note}</span>` : ''}</div>
     ${mid ? `<div class="t2">${esc(entryTitle(e))}</div>` : ''}
     <div class="t3">${fmtRange(e.start, e.end)}</div>
-    ${tall && (e.group || e.detail) ? `<div class="chips">${groupChip(e)}${e.detail && !e.group ? `<span class="t3">${esc(e.detail)}</span>` : ''}</div>` : ''}
+    ${chips ? `<div class="chips">${groupChip(e)}${e.detail && !e.group ? `<span class="t3">${esc(e.detail)}</span>` : ''}</div>` : ''}
+    ${noteLines >= 1 ? `<div class="ev-note" style="-webkit-line-clamp:${noteLines}">${ICON.note} ${esc(note)}</div>` : ''}
   </button>`;
 }
 
@@ -542,13 +570,13 @@ function renderWeek(v) {
       ${now}${evs.map((e) => evBlockHTML(e, px(D.mins(e.start)), px(D.mins(e.end)) - px(D.mins(e.start)))).join('')}</div>`;
   }).join('');
 
-  v.innerHTML = `${header}
+  v.innerHTML = withLegend(`${header}
     <div class="card week"><div class="week-inner" style="--cols:${cols}">
       <div class="wk-head"><div></div>${head}</div>
       <div class="wk-allday"><div class="lbl">Due / all day</div>${allday}</div>
       <div class="wk-body" style="height:${px(hi) + PAD}px;--pad:${PAD}px"><div class="wk-times">${times}</div>${colsHTML}</div>
     </div></div>
-    ${legendHTML()}`;
+    `);
 }
 
 function rowEvHTML(e) {
@@ -564,12 +592,13 @@ function rowEvHTML(e) {
   return `<div class="row-ev ${modeClass(e.mode)} ${e.rel === 'other' ? 'other' : ''}" data-open="${e.src}:${esc(e.id)}" style="--c:${entryColor(e)}">
     <div class="tm">${fmtRange(e.start, e.end)}</div>
     <div><div class="ti">${e.code ? `<span style="color:${entryColor(e)}">${codeLabel(e.code)}</span> ` : ''}${esc(entryTitle(e))}</div>
-    <div class="meta">${modeChip(e.mode)}${kindChip(e)}${groupChip(e)}${e.detail ? `<span>${esc(e.detail)}</span>` : ''}${meta.attended ? '<span style="color:var(--ok)">✓ attended</span>' : ''}${meta.note ? ICON.note : ''}</div></div>
+    <div class="meta">${modeChip(e.mode)}${kindChip(e)}${groupChip(e)}${e.detail ? `<span>${esc(e.detail)}</span>` : ''}${meta.attended ? '<span style="color:var(--ok)">✓ attended</span>' : ''}</div>
+    ${meta.note ? `<div class="row-note">${ICON.note} ${esc(meta.note)}</div>` : ''}</div>
   </div>`;
 }
 
 function renderWeekList(v, header, days, today) {
-  v.innerHTML = `${header}<div class="daylist">${days.map((iso) => {
+  v.innerHTML = withLegend(`${header}<div class="daylist">${days.map((iso) => {
     const list = entriesOn(iso).sort((a, b) => (a.start || '00:00').localeCompare(b.start || '00:00'));
     const tag = dayTag(iso);
     if (!list.length && D.parse(iso).getDay() === 0) return '';
@@ -577,7 +606,7 @@ function renderWeekList(v, header, days, today) {
       <h3>${fmtDate(iso, { long: true })} ${tag ? `<span class="daytag"><span class="chip ${tag.cls}">${tag.label}</span></span>` : ''}</h3>
       ${list.length ? list.map(rowEvHTML).join('') : '<div class="muted small">Nothing scheduled</div>'}
     </section>`;
-  }).join('')}</div>${legendHTML()}`;
+  }).join('')}</div>`);
 }
 
 /* ================================================================== */
@@ -610,7 +639,7 @@ function renderMonth(v) {
       ${shown.length > max ? `<div class="mini more">+${shown.length - max} more</div>` : ''}
     </div>`;
   }
-  v.innerHTML = `${weekNav(`${MON[first.getMonth()]} ${first.getFullYear()}`)}<div class="month">${cells}</div>${legendHTML()}`;
+  v.innerHTML = withLegend(`${weekNav(`${MON[first.getMonth()]} ${first.getFullYear()}`)}<div class="month">${cells}</div>`);
 }
 
 /* ================================================================== */
@@ -682,69 +711,152 @@ function taskRowHTML(it) {
     <div class="due ${dueClass(it)}">${it.date ? relDay(it.date) : 'No date'}${it.start ? `<br>${fmtTime(it.start)}` : ''}</div>
   </div>`;
 }
-function upcomingExams() {
-  const today = D.today();
-  const fromSched = SCHED.sessions.filter((s) => (s.kind === 'exam' || s.kind === 'test') && s.date >= today && relevance(s) !== 'other')
-    .map((s) => ({ ...s, rel: relevance(s) }));
-  const fromItems = data.items.filter((i) => i.kind === 'exam' && !i.done && i.date >= today).map(itemToEntry);
-  return [...fromSched, ...fromItems].sort((a, b) => (a.date + (a.start || '')).localeCompare(b.date + (b.start || '')));
+const STATUS = { 'not-started': 'Not started', 'in-progress': 'In progress', done: 'Done' };
+const statusOf = (it) => it.status || (it.done ? 'done' : 'not-started');
+function setStatus(it, st) {
+  it.status = st;
+  if (st === 'done' && !it.done) it.doneAt = Date.now();
+  it.done = st === 'done';
 }
+// "85", "85%", "17/20", "A-"-style text is kept as typed; numbers become a percentage.
+function gradePct(g) {
+  const t = String(g ?? '').trim();
+  let m = /^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)$/.exec(t);
+  if (m && +m[2] > 0) return (+m[1] / +m[2]) * 100;
+  m = /^(\d+(?:\.\d+)?)\s*%?$/.exec(t);
+  return m ? +m[1] : null;
+}
+// One list of every deadline: your items plus exams/tests from the timetable.
+function deadlineRows() {
+  const rows = data.items.filter((i) => i.kind !== 'event' || i.status || i.grade).map((it) => ({
+    key: 'i:' + it.id, src: 'i', id: it.id, code: it.course, name: it.title, date: it.date, time: it.start, kind: it.kind,
+    status: statusOf(it), grade: it.grade || '', weight: it.weight ?? '', item: it,
+  }));
+  if (ui.taskTimetable) {
+    for (const s of SCHED.sessions) {
+      if ((s.kind !== 'exam' && s.kind !== 'test') || relevance(s) === 'other') continue;
+      const m = getMeta(s.id);
+      rows.push({ key: 's:' + s.id, src: 's', id: s.id, code: s.code, name: s.code ? `${s.detail || 'Exam'} — ${COURSE_SHORT[s.code]}` : s.title,
+        date: s.date, time: s.start, kind: s.kind, status: m.status || (s.date < D.today() ? 'done' : 'not-started'), grade: m.grade || '', weight: m.weight ?? '', session: s });
+    }
+  }
+  return rows.sort((a, b) => ((a.date || '9999') + (a.time || '99')).localeCompare((b.date || '9999') + (b.time || '99')));
+}
+function updateRow(key, patch) {
+  const [src, id] = [key.slice(0, 1), key.slice(2)];
+  if (src === 's') { setMeta(id, patch); return; }
+  const it = data.items.find((i) => i.id === id);
+  if (!it) return;
+  if ('status' in patch) setStatus(it, patch.status);
+  if ('grade' in patch) it.grade = patch.grade;
+  if ('weight' in patch) it.weight = patch.weight;
+  upsert('items', it);
+}
+
 function renderTasks(v) {
   const today = D.today();
   const weekEnd = D.iso(D.add(D.sow(new Date()), 6));
-  let items = data.items.filter((i) => (!ui.taskCourse || i.course === ui.taskCourse) && (!ui.taskKind || i.kind === ui.taskKind))
-    .filter((i) => !ui.taskQuery || `${i.title} ${i.notes || ''} ${i.course || ''}`.toLowerCase().includes(ui.taskQuery.toLowerCase()));
-  const all = items;
-  if (ui.taskFilter === 'open') items = items.filter((i) => !i.done);
-  if (ui.taskFilter === 'done') items = items.filter((i) => i.done);
-  const sortKey = (i) => (i.date || '9999') + (i.start || '');
-  items.sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
-  const groups = [
-    ['Overdue', 'overdue', items.filter((i) => !i.done && i.date && i.date < today)],
-    ['Today', '', items.filter((i) => !i.done && i.date === today)],
-    ['This week', '', items.filter((i) => !i.done && i.date > today && i.date <= weekEnd)],
-    ['Later', '', items.filter((i) => !i.done && i.date > weekEnd)],
-    ['No date', '', items.filter((i) => !i.done && !i.date)],
-    ['Completed', '', items.filter((i) => i.done).reverse()],
-  ];
-  const openAll = all.filter((i) => !i.done);
-  const doneCount = all.length - openAll.length;
-  const overdue = openAll.filter((i) => i.date && i.date < today).length;
-  const weekDue = openAll.filter((i) => i.date >= today && i.date <= weekEnd).length;
+  const q = ui.taskQuery.toLowerCase();
+  const all = deadlineRows().filter((r) => (!ui.taskCourse || r.code === ui.taskCourse) && (!ui.taskKind || r.kind === ui.taskKind || (ui.taskKind === 'exam' && r.kind === 'test')))
+    .filter((r) => !q || `${r.name} ${r.code || ''} ${r.item?.notes || ''}`.toLowerCase().includes(q));
+  let rows = all;
+  if (ui.taskFilter === 'open') rows = rows.filter((r) => r.status !== 'done');
+  if (ui.taskFilter === 'done') rows = rows.filter((r) => r.status === 'done');
+  const open = all.filter((r) => r.status !== 'done');
+  const overdue = open.filter((r) => r.date && r.date < today).length;
+  const weekDue = open.filter((r) => r.date >= today && r.date <= weekEnd).length;
+  const doneCount = all.length - open.length;
   const pct = all.length ? Math.round((doneCount / all.length) * 100) : 0;
-  const exams = upcomingExams().slice(0, 12);
+
+  let todayMarked = false;
+  const body = rows.map((r) => {
+    let divider = '';
+    if (!todayMarked && r.date && r.date >= today) {
+      todayMarked = true;
+      divider = `<tr class="today-row"><td colspan="6"><span>Today · ${fmtDate(today)}</span></td></tr>`;
+    }
+    const over = r.status !== 'done' && r.date && r.date < today;
+    const c = r.code ? courseColor(r.code) : 'var(--PERSONAL)';
+    const it = r.item;
+    const subs = it?.subtasks || [];
+    return `${divider}<tr class="${r.status === 'done' ? 'is-done' : ''} ${r.src === 's' ? 'from-tt' : ''}">
+      <td>${r.code ? `<span class="chip crs" style="--c:${c}">${codeLabel(r.code).replace('DH ', '')}</span>` : '<span class="muted">—</span>'}</td>
+      <td><div class="nm"><button class="link" data-open="${r.key}">${esc(r.name)}</button>
+        ${r.kind === 'exam' || r.kind === 'test' ? kindChip({ kind: r.kind === 'test' ? 'test' : 'exam' }) : ''}
+        ${r.src === 's' ? '<span class="muted small">timetable</span>' : ''}
+        ${subs.length ? `<span class="muted small">☑ ${subs.filter((x) => x.done).length}/${subs.length}</span>` : ''}
+        ${(it?.attachments || []).length ? `<span class="muted small">${ICON.clip}${it.attachments.length}</span>` : ''}
+        ${it?.notes ? `<span class="muted small" title="${esc(it.notes.slice(0, 300))}">${ICON.note}</span>` : ''}</div></td>
+      <td class="dt ${over ? 'over' : ''}">${r.date ? `${MON[D.parse(r.date).getMonth()]} ${D.parse(r.date).getDate()}, ${D.parse(r.date).getFullYear()}${r.time ? ' ' + fmtTime(r.time).toUpperCase() : ''}` : 'No date'}
+        <div class="rel">${r.date ? (over ? 'Overdue · ' : '') + relDay(r.date) : ''}</div></td>
+      <td><select class="status st-${r.status}" data-row="${r.key}" data-field="status" aria-label="Status">
+        ${Object.entries(STATUS).map(([k, n]) => `<option value="${k}" ${k === r.status ? 'selected' : ''}>${n}</option>`).join('')}</select></td>
+      <td><input class="cell" data-row="${r.key}" data-field="grade" value="${esc(r.grade)}" placeholder="—" aria-label="Grade"></td>
+      <td><input class="cell" data-row="${r.key}" data-field="weight" value="${esc(r.weight)}" placeholder="—" inputmode="decimal" aria-label="Weight (%)"></td>
+    </tr>`;
+  }).join('');
 
   v.innerHTML = `<div class="toolbar">
-      <h2>Tasks & due dates</h2>
-      <div class="seg" role="group" aria-label="Status">${['open', 'done', 'all'].map((f) => `<button data-tf="${f}" aria-pressed="${ui.taskFilter === f}">${f[0].toUpperCase() + f.slice(1)}</button>`).join('')}</div>
-      <select id="tk-course" aria-label="Course"><option value="">All courses</option>${Object.keys(SCHED.courses).map((c) => `<option value="${c}" ${c === ui.taskCourse ? 'selected' : ''}>${codeLabel(c)}</option>`).join('')}</select>
+      <h2>Deadlines</h2>
+      <div class="seg" role="group" aria-label="Status">${[['all', 'All'], ['open', 'To do'], ['done', 'Done']].map(([f, n]) => `<button data-tf="${f}" aria-pressed="${ui.taskFilter === f}">${n}</button>`).join('')}</div>
+      <select id="tk-course" aria-label="Course"><option value="">All courses</option>${Object.keys(SCHED.courses).map((c) => `<option value="${c}" ${c === ui.taskCourse ? 'selected' : ''}>${codeLabel(c)} · ${esc(COURSE_SHORT[c])}</option>`).join('')}</select>
       <select id="tk-kind" aria-label="Type"><option value="">All types</option>${Object.entries(KINDS).map(([k, n]) => `<option value="${k}" ${k === ui.taskKind ? 'selected' : ''}>${n}</option>`).join('')}</select>
+      <label class="check small"><input type="checkbox" id="tk-tt" ${ui.taskTimetable ? 'checked' : ''}> Timetable exams</label>
       <input type="search" id="tk-q" placeholder="Search…" value="${esc(ui.taskQuery)}">
       <span class="spacer"></span>
       <button class="btn primary" data-action="new-item">${ICON.plus}<span>New</span></button>
     </div>
     <div class="stats">
-      <div class="card stat"><div class="v">${openAll.length}</div><div class="l">Open</div></div>
+      <div class="card stat"><div class="v">${open.length}</div><div class="l">To do</div></div>
       <div class="card stat ${overdue ? 'warn' : ''}"><div class="v">${overdue}</div><div class="l">Overdue</div></div>
       <div class="card stat"><div class="v">${weekDue}</div><div class="l">Due this week</div></div>
-      <div class="card stat"><div class="v">${pct}%</div><div class="l">${doneCount} of ${all.length} complete</div><div class="progress"><i style="width:${pct}%"></i></div></div>
+      <div class="card stat"><div class="v">${pct}%</div><div class="l">${doneCount} of ${all.length} done</div><div class="progress"><i style="width:${pct}%"></i></div></div>
     </div>
-    <div class="cols-2">
-      <div>${items.length ? groups.filter((g) => g[2].length).map(([t, cls, list]) => `<div class="section-title ${cls}">${t} · ${list.length}</div><div class="card">${list.map(taskRowHTML).join('')}</div>`).join('')
-        : `<div class="card empty">${data.items.length ? 'Nothing here.' : 'No assignments yet. Use <b>New</b> to add assignments, due dates and events, or <b>Import</b> to upload a calendar file.'}</div>`}</div>
-      <aside><div class="section-title">Upcoming exams & tests</div>
-        <div class="card">${exams.length ? exams.map((e) => {
-          const n = D.diffDays(today, e.date);
-          return `<div class="exam-row" data-open="${e.src}:${esc(e.id)}" style="--c:${entryColor(e)}">
-            <div class="cd">${n}<small>${n === 1 ? 'day' : 'days'}</small></div>
-            <div><b>${e.code ? codeLabel(e.code) + ' · ' : ''}${esc(entryTitle(e))}</b><div class="small muted">${fmtDate(e.date)} · ${fmtRange(e.start, e.end) || 'All day'} ${e.detail ? '· ' + esc(e.detail) : ''}</div></div></div>`;
-        }).join('') : '<div class="empty">No upcoming exams.</div>'}</div></aside>
-    </div>`;
+    <div class="card table-wrap">
+      <table class="deadlines">
+        <thead><tr><th>Class</th><th>Name</th><th>Due date</th><th>Status</th><th>Grade</th><th>Weight %</th></tr></thead>
+        <tbody>${body || `<tr><td colspan="6" class="empty">${all.length ? 'Nothing matches these filters.' : 'No deadlines yet — add one below.'}</td></tr>`}</tbody>
+        <tfoot><tr class="quick-add">
+          <td><select id="qa-course" aria-label="Class"><option value="">—</option>${Object.keys(SCHED.courses).map((c) => `<option value="${c}" ${c === ui.taskCourse ? 'selected' : ''}>${codeLabel(c).replace('DH ', '')}</option>`).join('')}</select></td>
+          <td><input type="text" id="qa-name" placeholder="+ Add a deadline…" aria-label="Name"></td>
+          <td><div class="qa-when"><input type="date" id="qa-date" value="${today}" aria-label="Due date"><input type="time" id="qa-time" aria-label="Due time"></div></td>
+          <td><select id="qa-status" class="status" aria-label="Status">${Object.entries(STATUS).map(([k, n]) => `<option value="${k}">${n}</option>`).join('')}</select></td>
+          <td><input type="text" class="cell" id="qa-weight" placeholder="Weight %" inputmode="decimal" aria-label="Weight"></td>
+          <td><button class="btn primary sm" id="qa-add">Add</button></td>
+        </tr></tfoot>
+      </table>
+    </div>
+    <p class="muted small">Click a name for notes, checklist and attachments. Grades like <b>85</b>, <b>85%</b> or <b>17/20</b> feed the course averages on the Courses page.</p>`;
+
   $$('[data-tf]', v).forEach((b) => (b.onclick = () => { ui.taskFilter = b.dataset.tf; renderTasks(v); }));
   $('#tk-course').onchange = (e) => { ui.taskCourse = e.target.value; renderTasks(v); };
   $('#tk-kind').onchange = (e) => { ui.taskKind = e.target.value; renderTasks(v); };
-  const q = $('#tk-q');
-  q.addEventListener('input', debounce(() => { ui.taskQuery = q.value; renderTasks(v); const n = $('#tk-q'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }, 250));
+  $('#tk-tt').onchange = (e) => { ui.taskTimetable = e.target.checked; renderTasks(v); };
+  const qi = $('#tk-q');
+  qi.addEventListener('input', debounce(() => { ui.taskQuery = qi.value; renderTasks(v); const n = $('#tk-q'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }, 250));
+  $$('[data-row]', v).forEach((el) => (el.onchange = () => {
+    const f = el.dataset.field;
+    updateRow(el.dataset.row, { [f]: el.value.trim() });
+    commit({ rerender: f === 'status' });
+    if (f === 'status' && el.value === 'done') toast('Nice — marked done ✓');
+  }));
+  const add = () => {
+    const name = $('#qa-name').value.trim();
+    if (!name) { $('#qa-name').focus(); return; }
+    const it = { id: uid('t'), kind: 'assignment', title: name, course: $('#qa-course').value || null,
+      date: $('#qa-date').value || '', start: $('#qa-time').value || '', end: '', mode: '', priority: 'normal', notes: '',
+      subtasks: [], attachments: [], weight: $('#qa-weight').value.trim(), grade: '', createdAt: Date.now() };
+    setStatus(it, $('#qa-status').value);
+    upsert('items', it);
+    const keep = { course: $('#qa-course').value, date: $('#qa-date').value };
+    commit();
+    $('#qa-course').value = keep.course;
+    $('#qa-date').value = keep.date;
+    $('#qa-name').focus();
+    toast('Deadline added');
+  };
+  $('#qa-add').onclick = add;
+  $$('.quick-add input', v).forEach((el) => el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }));
 }
 
 /* ================================================================== */
@@ -852,11 +964,17 @@ function renderCourses(v) {
       data.items.filter((i) => i.kind === 'exam' && i.course === code && i.date >= today).sort((a, b) => a.date.localeCompare(b.date))[0];
     const online = ses.filter((s) => s.mode === 'online').length, inp = ses.filter((s) => s.mode === 'in-person').length;
     const hrs = ses.reduce((a, s) => a + minutesOf(s), 0) / 60;
-    const instr = [...new Set(ses.flatMap((s) => s.instructors || []))];
-    const open = data.items.filter((i) => i.course === code && !i.done).length;
+    const instr = COURSE_INSTR[code] || [];
+    const open = data.items.filter((i) => i.course === code && statusOf(i) !== 'done').length;
     const notes = data.notes.filter((n) => n.course === code).length;
     const pct = past.length ? Math.round((attended / past.length) * 100) : 0;
     const prog = ses.length ? Math.round((past.length / ses.length) * 100) : 0;
+    const graded = [
+      ...data.items.filter((i) => i.course === code).map((i) => [i.grade, i.weight]),
+      ...ses.filter((s) => s.kind === 'exam' || s.kind === 'test').map((s) => [getMeta(s.id).grade, getMeta(s.id).weight]),
+    ].map(([g, w]) => [gradePct(g), parseFloat(w)]).filter(([g]) => g != null);
+    const wSum = graded.reduce((a, [, w]) => a + (w > 0 ? w : 0), 0);
+    const avg = graded.length ? (wSum ? graded.reduce((a, [g, w]) => a + (w > 0 ? g * w : 0), 0) / wSum : graded.reduce((a, [g]) => a + g, 0) / graded.length) : null;
     return `<div class="card course" style="--c:${courseColor(code)}">
       <div class="code">${codeLabel(code)}</div><h3>${esc(name)}</h3>
       <dl class="kv">
@@ -865,6 +983,7 @@ function renderCourses(v) {
         <dt>Sessions</dt><dd>${past.length} of ${ses.length} done · ${+hrs.toFixed(1)} h total</dd>
         <dt>Attendance</dt><dd>${past.length ? `${attended}/${past.length} checked (${pct}%)` : '—'}</dd>
         <dt>Next class</dt><dd>${next ? `${fmtDate(next.date)} · ${fmtRange(next.start, next.end)}` : '—'}</dd>
+        <dt>Grade so far</dt><dd>${avg != null ? `<b>${avg.toFixed(1)}%</b> <span class="muted">· ${wSum ? `${+wSum.toFixed(1)}% of course graded` : `${graded.length} graded`}</span>` : '—'}</dd>
         <dt>Next exam</dt><dd>${nextExam ? `<b style="color:var(--danger)">${fmtDate(nextExam.date)}</b> ${esc(nextExam.detail || nextExam.title || '')}` : '—'}</dd>
       </dl>
       <div class="progress" title="Course progress"><i style="width:${prog}%"></i></div>
@@ -958,8 +1077,7 @@ function openSession(id) {
 function toggleItem(id, done) {
   const it = data.items.find((i) => i.id === id);
   if (!it) return;
-  it.done = done;
-  it.doneAt = done ? Date.now() : null;
+  setStatus(it, done ? 'done' : 'not-started');
   upsert('items', it);
   commit();
   if (done) toast('Nice — marked done ✓');
@@ -999,7 +1117,11 @@ function openItemEditor(seed = {}) {
         <div class="attach-list" id="it-files"></div>
         <label class="dropzone" id="it-drop">Drop files here or <u>browse</u><input type="file" id="it-file" multiple hidden></label>
         <div class="muted small">${sync.cloud ? 'Files up to 2.5 MB, saved to the cloud.' : 'Cloud sync is off: files up to 1 MB are kept on this device only.'}</div></div>
-      <label class="check"><input type="checkbox" id="it-done" ${it.done ? 'checked' : ''}> Completed</label>
+      <div class="grid-3">
+        <label class="field">Status<select id="it-status">${Object.entries(STATUS).map(([k, n]) => `<option value="${k}" ${k === statusOf(it) ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+        <label class="field">Grade<input type="text" id="it-grade" value="${esc(it.grade || '')}" placeholder="e.g. 85% or 17/20"></label>
+        <label class="field">Weight (% of course)<input type="text" id="it-weight" inputmode="decimal" value="${esc(it.weight ?? '')}" placeholder="e.g. 10"></label>
+      </div>
     </form>
     <footer>
       ${existing ? `<button class="btn danger left" id="it-del">${ICON.trash} Delete</button>` : ''}
@@ -1079,9 +1201,9 @@ function openItemEditor(seed = {}) {
     it.mode = ev ? $('#it-mode').value : '';
     it.notes = $('#it-notes').value;
     it.subtasks = it.subtasks.filter((s) => s.text.trim());
-    const wasDone = existing?.done;
-    it.done = $('#it-done').checked;
-    if (it.done && !wasDone) it.doneAt = Date.now();
+    setStatus(it, $('#it-status').value);
+    it.grade = $('#it-grade').value.trim();
+    it.weight = $('#it-weight').value.trim();
     upsert('items', it);
     closeModal();
     commit();
@@ -1156,6 +1278,7 @@ function openSettings() {
 /* Import / export                                                     */
 /* ================================================================== */
 function guessCourse(s) {
+  if (/\bL1O\b|level 1 orientation/i.test(s || '')) return 'L1O';
   const m = /DH\s?-?(1\d\d)/i.exec(s || '');
   return m && SCHED.courses['DH' + m[1]] ? 'DH' + m[1] : null;
 }
@@ -1363,12 +1486,12 @@ function openPrint() {
       <div class="grid-2">
         <label class="field">Layout<select id="pr-layout">
           <option value="list">Compact list (fewest pages)</option><option value="grid">Time grid</option></select></label>
-        <label class="field">Weeks per page<select id="pr-per"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></label>
+        <label class="field" id="pr-per-wrap">Weeks per page<select id="pr-per"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></label>
       </div>
       <div class="checks">
         <label class="check"><input type="checkbox" id="pr-mine" checked> Only my groups</label>
         <label class="check"><input type="checkbox" id="pr-items" checked> Include my due dates & events</label>
-        <label class="check"><input type="checkbox" id="pr-legend" checked> Colour legend</label>
+        <label class="check"><input type="checkbox" id="pr-legend" checked> Legend & instructors in margin</label>
       </div>
       <div class="muted small" id="pr-est"></div>
     </div>
@@ -1386,10 +1509,12 @@ function openPrint() {
     $('#pr-custom').classList.toggle('hidden', $('#pr-range').value !== 'custom');
     const [a, b] = getRange();
     const weeks = Math.max(1, Math.ceil((D.diffDays(D.iso(a), D.iso(b)) + 1) / 7));
-    const per = +$('#pr-per').value;
-    $('#pr-est').textContent = `${weeks} week${weeks > 1 ? 's' : ''} → about ${Math.ceil(weeks / per)} page${Math.ceil(weeks / per) > 1 ? 's' : ''}`;
+    const list = $('#pr-layout').value === 'list';
+    $('#pr-per-wrap').classList.toggle('hidden', list);
+    const pages = Math.ceil(weeks / (list ? 2.7 : +$('#pr-per').value));
+    $('#pr-est').textContent = `${weeks} week${weeks > 1 ? 's' : ''} → ${list ? 'roughly ' : ''}${pages} page${pages > 1 ? 's' : ''}${list ? ' (weeks fill each page)' : ''}`;
   };
-  const syncPer = () => { $('#pr-per').value = $('#pr-layout').value === 'list' ? '3' : '2'; est(); };
+  const syncPer = () => { $('#pr-per').value = '2'; est(); };
   syncPer();
   $('#pr-layout').onchange = syncPer;
   $$('select, input', modal).forEach((el) => el.addEventListener('change', est));
@@ -1420,12 +1545,14 @@ function buildPrint(from, to, opts) {
   // Landscape letter leaves ~199mm between margins; reserve room for the page and week headings.
   const rowMM = Math.max(2.2, Math.min(7, (184 - 16 - opts.per * 13) / opts.per / nrows));
   const short = (e) => (e.code ? `${codeLabel(e.code)} ` : '') + entryTitle(e);
+  const noteOf = (e) => ((e.src === 's' ? getMeta(e.id).note : e.item?.notes) || '').trim();
+  const noteHTML = (e, max = 160) => { const n = noteOf(e); return n ? `<div class="pn">✎ ${esc(n.length > max ? n.slice(0, max) + '…' : n)}</div>` : ''; };
   const extra = (e) => [modeLabel(e.mode), e.group ? groupLabel(e) : '', e.kind === 'exam' ? 'EXAM' : e.kind === 'test' ? 'TEST' : '', e.detail && e.kind !== 'exam' && e.kind !== 'test' ? e.detail : ''].filter(Boolean).join(' · ');
 
   const weekHTML = (days, idx) => {
     const a = D.parse(days[0]), b = D.parse(days[6]);
     const title = `${MON3[a.getMonth()]} ${a.getDate()} – ${MON3[b.getMonth()]} ${b.getDate()}, ${b.getFullYear()}`;
-    const brk = (idx + 1) % opts.per === 0 && idx < weeks.length - 1 ? 'break' : '';
+    const brk = opts.layout === 'grid' && (idx + 1) % opts.per === 0 && idx < weeks.length - 1 ? 'break' : '';
     const heads = days.map((iso, i) => {
       const d = D.parse(iso), tag = dayTag(iso);
       return `<div class="ph ${tag?.cls === 'off' ? 'off' : ''}">${DAY3[i]} ${d.getDate()}${tag && tag.cls !== 'off' ? ` <span style="font-weight:400;color:#555">· ${tag.label}</span>` : ''}</div>`;
@@ -1437,7 +1564,7 @@ function buildPrint(from, to, opts) {
           if (isClosure(e)) return `<div class="closedcell">${esc(e.title)}</div>`;
           if (e.src === 'i' && !isTimed(e)) return `<div class="pe none" style="--c:${entryColor(e)}">☐ <b>${esc(e.item.kind === 'assignment' ? 'Due: ' : '')}${esc(e.title)}</b>${e.start ? ` <span class="pt">${fmtTime(e.start)}</span>` : ''}</div>`;
           return `<div class="pe ${modeClass(e.mode)} ${e.kind === 'exam' || e.kind === 'test' ? e.kind : ''}" style="--c:${entryColor(e)};${e.rel === 'other' ? 'opacity:.55' : ''}">
-            <span class="pt">${fmtRange(e.start, e.end)}</span> <b>${esc(short(e))}</b><div class="pm">${esc(extra(e))}</div></div>`;
+            <span class="pt">${fmtRange(e.start, e.end)}</span> <b>${esc(short(e))}</b><div class="pm">${esc(extra(e))}</div>${noteHTML(e)}</div>`;
         }).join('')}</div>`;
       }).join('');
       return `<section class="p-week ${brk}"><h4>${title}</h4><div class="p-list" style="--pcols:${cols}">${heads}${cells}</div></section>`;
@@ -1455,19 +1582,27 @@ function buildPrint(from, to, opts) {
         ${evs.map((e) => {
           const w = 100 / (e._lanes || 1), l = (e._lane || 0) * w, h = px(D.mins(e.end)) - px(D.mins(e.start));
           return `<div class="pev ${modeClass(e.mode)} ${e.kind === 'exam' || e.kind === 'test' ? e.kind : ''}" style="--c:${entryColor(e)};top:${px(D.mins(e.start))}mm;height:${h - 0.3}mm;left:${l}%;width:calc(${w}% - .4mm);${e.rel === 'other' ? 'opacity:.55' : ''}">
-            <b>${esc(short(e))}</b>${h > rowMM * 2.2 ? `<span class="pm">${fmtRange(e.start, e.end)}</span>` : ''}${h > rowMM * 3.2 ? `<div class="pm">${esc(extra(e))}</div>` : ''}</div>`;
+            <b>${esc(short(e))}</b>${h > rowMM * 2.2 ? `<span class="pm">${fmtRange(e.start, e.end)}</span>` : ''}${h > rowMM * 3.2 ? `<div class="pm">${esc(extra(e))}</div>` : ''}${h > rowMM * 4.5 ? noteHTML(e, 120) : ''}</div>`;
         }).join('')}</div>`;
     }).join('');
     return `<section class="p-week ${brk}"><h4>${title}</h4>
       <div class="p-grid" style="--pcols:${cols};--prow:${rowMM}mm;--nrows:${nrows}"><div class="ph"></div>${heads}<div class="ptimes">${times}</div>${pcols}</div></section>`;
   };
 
-  const legend = opts.legend ? `<div class="legend">
-      <span class="sw"><span class="key inperson" style="--accent:#555"></span>In person</span><span class="sw"><span class="key online" style="--accent:#555"></span>Online</span>
-      ${Object.keys(SCHED.courses).map((c) => `<span class="sw" style="--c:${courseColor(c)}"><span class="dot"></span>${codeLabel(c)}</span>`).join('')}</div>` : '';
+  const legend = opts.legend ? `<aside class="p-legend">
+      <div class="pl-h">Legend</div>
+      <div class="pl-key"><span class="key inperson"></span>In person</div>
+      <div class="pl-key"><span class="key online"></span>Online</div>
+      <div class="pl-key"><span class="pl-exam"></span>Exam / test</div>
+      <div class="pl-key">✎ Your class notes</div>
+      <div class="pl-h">Courses & instructors</div>
+      ${Object.keys(SCHED.courses).map((c) => `<div class="pl-c" style="--c:${courseColor(c)}"><b>${codeLabel(c)}</b> ${esc(SCHED.courses[c])}
+        <div class="pl-i">${esc((COURSE_INSTR[c] || []).join(', '))}</div></div>`).join('')}
+    </aside>` : '';
   const st = data.settings;
-  $('#print-root').innerHTML = `<div class="p-head"><div><h3>Level 1 Schedule</h3><div style="font-size:7pt;color:#555">${esc(SCHED.term.program)} · ${opts.mine ? `Pre-clinic group ${esc(st.preGroup)} · Rad lab group ${esc(st.radGroup)}` : 'All groups'} · printed ${fmtDate(D.today(), { year: true })}</div></div>${legend}</div>
-    ${weeks.map(weekHTML).join('')}`;
+  const head = `<div class="p-head"><h3>Level 1 Schedule</h3><div>${esc(SCHED.term.program)} · ${opts.mine ? `Pre-clinic group ${esc(st.preGroup)} · Rad lab group ${esc(st.radGroup)}` : 'All groups'} · printed ${fmtDate(D.today(), { year: true })}</div></div>`;
+  // The legend is position:fixed, which Chrome/Edge/Safari repeat in the margin of every printed page.
+  $('#print-root').innerHTML = `${legend}<div class="p-main ${opts.legend ? 'has-legend' : ''}">${head}${weeks.map(weekHTML).join('')}</div>`;
 }
 window.addEventListener('afterprint', () => { $('#print-root').innerHTML = ''; });
 
@@ -1532,6 +1667,32 @@ document.addEventListener('visibilitychange', async () => {
 // Keep the "now" line and relative dates fresh.
 setInterval(() => { if (!$('#modal-root').innerHTML && ui.view === 'week' && !document.hidden) render(); }, 5 * 60 * 1000);
 
+// Deadlines copied from the "CADH L1 - Deadline Tracker" Notion page. Fixed ids and an
+// ancient updatedAt mean they are added once, and any edit or deletion always wins.
+const STARTER_DEADLINES = [
+  ['DH103', 'Lesson 1 Discussion', '2026-10-06', '23:59', 'done'],
+  ['DH103', '1.2 - Lesson 1 Pre-Quiz', '2026-10-07', '07:30', 'done'],
+  ['DH103', '2A.2 - Lesson 2A Pre-Quiz', '2026-10-08', '08:00', 'done'],
+  ['DH107', '1.3 Introduction Assignment', '2026-10-08', '23:59', 'in-progress'],
+  ['DH106', 'RAD Theory Ch.3/4 Quiz', '2026-10-09', '09:00', 'not-started'],
+  ['L1O', 'WHMIS', '2026-10-12', '', 'not-started'],
+  ['L1O', 'Health and Safety in 4 Steps', '2026-10-12', '', 'not-started'],
+  ['L1O', 'Student Handbook Acknowledgement Form', '2026-10-12', '', 'not-started'],
+  ['L1O', 'Student Handbook Quiz', '2026-10-12', '', 'not-started'],
+  ['DH107', 'Indiana Plagiarism Test', '2026-10-16', '', 'not-started'],
+];
+function seedDeadlines() {
+  let added = 0;
+  STARTER_DEADLINES.forEach(([course, title, date, start, status], i) => {
+    const id = `t_seed_${String(i + 1).padStart(2, '0')}`;
+    if (data.deleted[id] || data.items.some((x) => x.id === id)) return;
+    data.items.push({ id, kind: 'assignment', title, course, date, start, end: '', mode: '', priority: 'normal', notes: '', subtasks: [],
+      attachments: [], status, done: status === 'done', grade: '', weight: '', createdAt: 1, updatedAt: 1 });
+    added++;
+  });
+  if (added) commit({ rerender: false });
+}
+
 /* ================================================================== */
 /* Boot                                                                */
 /* ================================================================== */
@@ -1545,6 +1706,7 @@ setInterval(() => { if (!$('#modal-root').innerHTML && ui.view === 'week' && !do
   const today = D.today();
   if (today < SCHED.term.start || today > SCHED.term.end) ui.cursor = D.parse(today < SCHED.term.start ? SCHED.term.start : SCHED.term.end);
   render();
-  if (await pullRemote()) render();
-  else renderHeader();
+  await pullRemote();
+  seedDeadlines();
+  render();
 })();

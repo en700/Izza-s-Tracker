@@ -24,7 +24,7 @@ test('every timed session is well formed', () => {
 
 test('spot checks against the PDF', () => {
   const find = (date, code, start) => s.find((x) => x.date === date && (x.code ?? null) === code && x.start === start);
-  assert.equal(find('2026-10-05', null, '08:00')?.end, '12:00'); // orientation
+  assert.equal(find('2026-10-05', 'L1O', '08:00')?.end, '12:00'); // orientation
   const lab = find('2026-10-27', 'DH113', '17:30');
   assert.deepEqual(lab.group, { type: 'rad', values: ['A2'] });
   assert.equal(lab.mode, 'in-person');
