@@ -48,18 +48,28 @@ Keyboard shortcuts: `←`/`→` change week or month, `T` jumps to today, `N` ad
    You can also add `AUTH_SECRET` (any long random string) for extra cookie-signing entropy.
 3. Deploy. If no password is set, the site refuses every request.
 
-### Sync between devices (recommended)
+### Sync between devices and backups (Turso)
 
-Without storage, notes and tasks are saved in the browser you used. To share them between
-your phone and your laptop:
+Without storage, notes and deadlines are saved in the browser you used. With a Turso database, everything
+(notes, deadlines, class check-ins, grades, settings and attachments) is saved online. Any device you sign in on
+gets the same data.
 
-1. In the Vercel project, open **Storage**, choose **Upstash for Redis** from the Marketplace
-   (the free plan is enough), and connect it to the project.
-   This adds `KV_REST_API_URL` and `KV_REST_API_TOKEN`.
-2. Redeploy. The header will show **Synced**.
+1. In the Vercel project, open **Storage** and create or connect a **Turso** database to the project.
+   This adds `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`. Names with a custom prefix
+   (e.g. `STORAGE_TURSO_DATABASE_URL`) also work.
+2. Redeploy, because new environment variables only apply to new deployments. The header will then show **Synced**,
+   and **Settings** will say "Cloud sync is on (Turso database)".
 
-With cloud sync on, attachments of up to 2.5 MB are stored in the cloud. Without it, attachments
-of up to 1 MB are stored on the device only.
+The app creates its one table (`kv`) by itself. Every save also writes that day's **backup**, and
+the last 30 days are kept. In **Settings → Cloud backups** you can download any of them as a file or restore it.
+Restoring makes that day's version the current one on every device.
+
+Anything saved in a browser before the database was connected is uploaded the first time that
+browser opens the site.
+
+Upstash Redis (`KV_REST_API_URL` / `KV_REST_API_TOKEN`) is still supported as an alternative.
+Attachments of up to 2.5 MB are stored in the cloud. Without cloud storage, attachments of up to 1 MB
+are stored on the device only.
 
 ## Run locally
 
@@ -69,7 +79,7 @@ npm run dev                  # http://localhost:3000
 npm test
 ```
 
-To try out cloud sync locally without Redis, set `LOCAL_STORE_FILE=.data/store.json`.
+To try out cloud sync locally without a database, set `LOCAL_STORE_FILE=.data/store.json`.
 
 ## Project layout
 
@@ -80,7 +90,7 @@ api/logout.js        clears the cookie
 api/data.js          GET/PUT synced user data (notes, tasks, checks, settings)
 api/files.js         attachment upload/download
 lib/auth.js          HMAC-signed session tokens (Web Crypto, Edge + Node)
-lib/store.js         Upstash Redis REST client (+ local JSON file for dev)
+lib/store.js         Turso (libSQL HTTP) / Upstash storage + daily backups (+ local JSON file for dev)
 public/              the app (index.html, app.js, styles.css, schedule.json, login.html)
 tools/               scripts that rebuilt schedule.json from the timetable PDF
 dev-server.js        local stand-in for Vercel

@@ -136,7 +136,7 @@ function blankData() {
   return { version: 1, items: [], notes: [], sessionMeta: {}, deleted: {}, settings: { ...DEFAULT_SETTINGS }, settingsUpdatedAt: 0, updatedAt: 0, revision: 0 };
 }
 let data = blankData();
-const sync = { cloud: false, state: 'local', pending: false, inflight: false, lastError: '' };
+const sync = { cloud: false, backend: '', state: 'local', pending: false, inflight: false, lastError: '' };
 
 function normalizeData(d) {
   const b = blankData();
@@ -201,6 +201,7 @@ async function pullRemote() {
     if (res.status === 401) { location.href = '/login'; return; }
     const j = await res.json();
     sync.cloud = !!j.cloud;
+    if (j.backend) sync.backend = j.backend;
     if (j.error) throw new Error(j.error);
     if (j.cloud && j.data) {
       const before = JSON.stringify([data.items, data.notes, data.sessionMeta, data.settings]);
@@ -1250,8 +1251,9 @@ function openSettings() {
         <label class="field">Density<select id="st-density"><option value="normal">Comfortable</option><option value="compact">Compact</option></select></label>
       </div>
       <div class="section-title" style="margin:6px 0 0">Your data</div>
-      <div class="note-hint">${sync.cloud ? '✅ Cloud sync is on — notes, tasks and checks are shared between all your devices.'
-        : '💾 Saved in this browser only. To sync across devices, connect “Upstash for Redis” in your Vercel project (Storage tab) and redeploy — see README.'}</div>
+      <div class="note-hint">${sync.cloud ? `✅ Cloud sync is on${sync.backend === 'turso' ? ' (Turso database)' : ''} — notes, deadlines, checks and settings are saved online and shared by every device you sign in on. A backup is kept for each of the last 30 days.`
+        : '💾 Saved in this browser only. To sync across devices, connect a Turso database in your Vercel project (Storage tab) and redeploy — see README.'}</div>
+      ${sync.cloud ? '<div id="st-backups" class="backups muted small">Loading backups…</div>' : ''}
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn" id="st-backup">Download backup (.json)</button>
         <button class="btn" id="st-ics">Export calendar (.ics)</button>
@@ -1272,6 +1274,58 @@ function openSettings() {
   $$('select', modal).forEach((s) => (s.onchange = upd));
   $('#st-backup').onclick = () => download(`level1-backup-${D.today()}.json`, JSON.stringify({ ...data, exportedAt: new Date().toISOString() }, null, 1), 'application/json');
   $('#st-ics').onclick = () => download('level1-schedule.ics', buildICS(), 'text/calendar');
+  if (sync.cloud) loadBackups();
+}
+
+async function loadBackups() {
+  const box = $('#st-backups');
+  try {
+    const res = await fetch('/api/data?backups', { cache: 'no-store' });
+    const j = await res.json();
+    if (!res.ok || j.error) throw new Error(j.error || res.status);
+    if (!$('#st-backups')) return;
+    box.innerHTML = j.backups.length ? `<div class="section-title" style="margin:2px 0 6px">Cloud backups</div>
+      <div class="backup-list">${j.backups.map((b) => `<div class="backup"><span><b>${fmtDate(b.day, { year: true })}</b> · ${b.items} deadlines/events · ${b.notes} notes</span>
+        <button class="btn sm" data-bk-dl="${esc(b.day)}">Download</button><button class="btn sm" data-bk-restore="${esc(b.day)}">Restore</button></div>`).join('')}</div>`
+      : 'No cloud backups yet — one is made automatically the first time something is saved each day.';
+    const fetchBackup = async (day) => {
+      const r = await fetch(`/api/data?backup=${encodeURIComponent(day)}`, { cache: 'no-store' });
+      const b = await r.json();
+      if (!r.ok || !b.data) throw new Error(b.error || 'Backup not found');
+      return b.data;
+    };
+    $$('[data-bk-dl]', box).forEach((btn) => (btn.onclick = async () => {
+      const d = await fetchBackup(btn.dataset.bkDl);
+      download(`level1-backup-${btn.dataset.bkDl}.json`, JSON.stringify(d, null, 1), 'application/json');
+    }));
+    $$('[data-bk-restore]', box).forEach((btn) => (btn.onclick = async () => {
+      if (!confirm(`Replace everything with the backup from ${fmtDate(btn.dataset.bkRestore, { year: true })}? Changes made since then will be lost on every device (today's state is still kept in today's backup).`)) return;
+      restoreSnapshot(await fetchBackup(btn.dataset.bkRestore));
+      closeModal();
+      toast('Backup restored');
+    }));
+  } catch (e) {
+    if (box) box.textContent = `Couldn't load backups: ${e.message}`;
+  }
+}
+// Make a snapshot the current state everywhere: its records win any merge, and
+// anything newer than it is deleted.
+function restoreSnapshot(snap) {
+  const now = Date.now();
+  const next = normalizeData(snap);
+  const keep = new Set([...next.items, ...next.notes].map((r) => r.id));
+  const deleted = { ...data.deleted };
+  for (const r of [...data.items, ...data.notes]) if (!keep.has(r.id)) deleted[r.id] = now;
+  for (const id of keep) delete deleted[id];
+  for (const r of [...next.items, ...next.notes]) r.updatedAt = now;
+  for (const m of Object.values(next.sessionMeta)) m.updatedAt = now;
+  // Session check-ins have no tombstones, so clear ones the snapshot doesn't have.
+  for (const id of Object.keys(data.sessionMeta)) if (!next.sessionMeta[id]) next.sessionMeta[id] = { updatedAt: now };
+  next.deleted = deleted;
+  next.settingsUpdatedAt = now;
+  next.revision = data.revision;
+  data = next;
+  commit();
 }
 
 /* ================================================================== */
