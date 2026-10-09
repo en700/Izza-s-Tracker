@@ -131,7 +131,7 @@ async function loadSchedule() {
 /* User data + sync                                                    */
 /* ================================================================== */
 const LS_KEY = 'l1s:data:v1';
-const DEFAULT_SETTINGS = { preGroup: 'A', radGroup: 'A2', others: 'hide', theme: 'auto', clock: '12', density: 'normal' };
+const DEFAULT_SETTINGS = { preGroup: 'A', radGroup: 'A2', others: 'hide', theme: 'auto', clock: '12', density: 'normal', hiddenCourses: [] };
 function blankData() {
   return { version: 1, items: [], notes: [], sessionMeta: {}, deleted: {}, settings: { ...DEFAULT_SETTINGS }, settingsUpdatedAt: 0, updatedAt: 0, revision: 0 };
 }
@@ -313,10 +313,12 @@ function itemToEntry(it) {
     kind: it.kind, done: !!it.done, item: it, rel: 'all',
   };
 }
+// Courses switched off in the sidebar are left out of the timetable views and printouts.
+const courseShown = (code) => !code || !(data.settings.hiddenCourses || []).includes(code);
 function sessionsOn(iso, { all = data.settings.others !== 'hide' } = {}) {
-  return (byDate.get(iso) || []).filter((s) => all || relevance(s) !== 'other');
+  return (byDate.get(iso) || []).filter((s) => (all || relevance(s) !== 'other') && courseShown(s.code));
 }
-function itemsOn(iso) { return data.items.filter((it) => it.date === iso); }
+function itemsOn(iso) { return data.items.filter((it) => it.date === iso && courseShown(it.course)); }
 function entriesOn(iso, opts) {
   const ses = sessionsOn(iso, opts).map((s) => ({ ...s, rel: relevance(s) }));
   const its = itemsOn(iso).map(itemToEntry);
@@ -414,23 +416,35 @@ function setView(view) {
 /* Week view                                                           */
 /* ================================================================== */
 function legendHTML() {
-  return `<aside class="side-legend card" aria-label="Legend">
-    <h3>Legend</h3>
-    <ul class="lg-keys">
-      <li><span class="key inperson"></span>In person</li>
-      <li><span class="key online"></span>Online</li>
-      ${data.settings.others !== 'hide' ? '<li><span class="key other"></span>Other group</li>' : ''}
-      <li><span class="chip mine">${esc(data.settings.radGroup)}</span>Your group</li>
-      <li><span class="chip exam">EXAM</span><span class="chip test">TEST</span></li>
-      <li><span class="lg-ico">${ICON.note}</span>Has class notes</li>
-      <li><span class="lg-ico" style="color:var(--ok);font-weight:800">✓</span>Attended</li>
-    </ul>
-    <h3>Courses & instructors</h3>
-    <ul class="lg-courses">${Object.keys(SCHED.courses).map((c) => `
-      <li style="--c:${courseColor(c)}"><span class="dot"></span><div>
-        <div><b>${codeLabel(c)}</b> ${esc(SCHED.courses[c])}</div>
-        <div class="ins">${esc((COURSE_INSTR[c] || []).join(', ') || 'Instructor TBA')}</div></div></li>`).join('')}
-    </ul>
+  const hidden = data.settings.hiddenCourses || [];
+  const codes = Object.keys(SCHED.courses);
+  const rad = esc(data.settings.radGroup);
+  return `<aside class="side-legend card" aria-label="Legend and course filter">
+    <table class="lg-table">
+      <thead><tr><th colspan="2">Key</th></tr></thead>
+      <tbody>
+        <tr><td><span class="key inperson"></span></td><td>In person</td></tr>
+        <tr><td><span class="key online"></span></td><td>Online</td></tr>
+        ${data.settings.others !== 'hide' ? '<tr><td><span class="key other"></span></td><td>Other group</td></tr>' : ''}
+        <tr><td><span class="chip mine">${rad}</span></td><td>Your group</td></tr>
+        <tr><td><span class="chip exam">EXAM</span></td><td>Exam / test</td></tr>
+        <tr><td class="ico">${ICON.note}</td><td>Has class notes</td></tr>
+        <tr><td class="ico" style="color:var(--ok);font-weight:800">✓</td><td>Attended</td></tr>
+      </tbody>
+    </table>
+    <div class="lg-head"><h3>Current courses</h3>
+      <button class="link-btn" data-courses-all="${hidden.length ? 'show' : 'hide'}">${hidden.length ? 'Show all' : 'Hide all'}</button></div>
+    <table class="lg-table lg-courses">
+      <thead><tr><th class="cb" title="Show on timetable">Show</th><th>Code</th><th>Name</th><th>Instructor</th></tr></thead>
+      <tbody>${codes.map((c) => {
+        const on = !hidden.includes(c);
+        return `<tr class="${on ? '' : 'off'}" style="--c:${courseColor(c)}">
+          <td class="cb"><input type="checkbox" data-course-toggle="${c}" ${on ? 'checked' : ''} aria-label="Show ${codeLabel(c)} on the timetable"></td>
+          <td class="cd"><span class="sw"></span>${esc(c)}</td>
+          <td>${esc(SCHED.courses[c])}</td>
+          <td class="ins">${esc((COURSE_INSTR[c] || []).join(', ') || '—')}</td></tr>`;
+      }).join('')}</tbody>
+    </table>
   </aside>`;
 }
 const withLegend = (main) => `<div class="with-legend"><div class="wl-main">${main}</div>${legendHTML()}</div>`;
@@ -1650,7 +1664,7 @@ function buildPrint(from, to, opts) {
       <div class="pl-key"><span class="pl-exam"></span>Exam / test</div>
       <div class="pl-key">✎ Your class notes</div>
       <div class="pl-h">Courses & instructors</div>
-      ${Object.keys(SCHED.courses).map((c) => `<div class="pl-c" style="--c:${courseColor(c)}"><b>${codeLabel(c)}</b> ${esc(SCHED.courses[c])}
+      ${Object.keys(SCHED.courses).filter(courseShown).map((c) => `<div class="pl-c" style="--c:${courseColor(c)}"><b>${codeLabel(c)}</b> ${esc(SCHED.courses[c])}
         <div class="pl-i">${esc((COURSE_INSTR[c] || []).join(', '))}</div></div>`).join('')}
     </aside>` : '';
   const st = data.settings;
@@ -1672,10 +1686,11 @@ function navigate(dir) {
 
 document.addEventListener('click', (e) => {
   if (e.target.matches('[data-toggle]')) return;
-  const t = e.target.closest('[data-action],[data-nav],[data-open],[data-goto],[data-view],[data-others]');
+  const t = e.target.closest('[data-action],[data-nav],[data-open],[data-goto],[data-view],[data-others],[data-courses-all]');
   if (!t) return;
   if (t.dataset.view) return setView(t.dataset.view);
   if (t.dataset.nav !== undefined) return navigate(+t.dataset.nav);
+  if (t.dataset.coursesAll) return setHiddenCourses(t.dataset.coursesAll === 'hide' ? Object.keys(SCHED.courses) : []);
   if (t.dataset.others) { data.settings.others = t.dataset.others; data.settingsUpdatedAt = Date.now(); return commit(); }
   if (t.dataset.goto) { ui.cursor = D.parse(t.dataset.goto); return setView('week'); }
   if (t.dataset.open) {
@@ -1692,7 +1707,20 @@ document.addEventListener('click', (e) => {
   else if (a === 'import') openImport();
   else if (a === 'logout') fetch('/api/logout', { method: 'POST' }).finally(() => location.replace('/login'));
 });
-document.addEventListener('change', (e) => { if (e.target.matches('#view [data-toggle]')) toggleItem(e.target.dataset.toggle, e.target.checked); });
+document.addEventListener('change', (e) => {
+  if (e.target.matches('#view [data-toggle]')) toggleItem(e.target.dataset.toggle, e.target.checked);
+  if (e.target.matches('[data-course-toggle]')) {
+    const code = e.target.dataset.courseToggle;
+    const hidden = new Set(data.settings.hiddenCourses || []);
+    if (e.target.checked) hidden.delete(code); else hidden.add(code);
+    setHiddenCourses([...hidden]);
+  }
+});
+function setHiddenCourses(list) {
+  data.settings.hiddenCourses = list;
+  data.settingsUpdatedAt = Date.now();
+  commit();
+}
 
 function pickDefaultDate() {
   const today = D.today();

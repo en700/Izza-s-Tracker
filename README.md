@@ -14,8 +14,10 @@ A password-protected timetable and school-year tracker for Level 1 Dental Hygien
   group chip. Toggle **My groups / All groups** to hide other groups' sessions or show them faded.
   You can change your groups in Settings.
 - **Exams & tests** are outlined and badged. A countdown list appears on the Tasks page.
-- **Legend in the right margin** of the Week and Month views (and of every printed page). It lists the colour keys and
-  each course with its instructors.
+- **Sidebar legend and course filter.** It appears on the Week and Month views and is laid out as a table like the Notion page:
+  a key table, then a *Current courses* table with columns Show, Code, Name and Instructor.
+  Untick a course to hide its classes and deadlines from the timetable and from printouts. *Hide all*
+  and *Show all* switch every course at once. The choice is synced to every device.
 - **Month, Agenda and Courses views.** The Agenda is searchable and can be filtered by course.
   Each Courses card shows instructors, sessions done, the next class, the next exam, attendance and the
   weighted grade so far.
