@@ -1,4 +1,4 @@
-// Level 1 Schedule — timetable, notes, checklists and assignment tracker.
+// Pooky's Dental Hygiene Program — timetable, notes, checklists and assignment tracker (Level 1 of 4).
 // Plain ES module, no build step. Timetable data lives in /schedule.json;
 // everything the user adds lives in `data` (localStorage + optional cloud sync).
 
@@ -378,7 +378,10 @@ function applyTheme() {
 
 function renderHeader() {
   const t = SCHED.term;
-  $('#term-sub').textContent = `${t.program} · ${fmtDate(t.start, { year: true }).replace(/^\w+, /, '')} – ${fmtDate(t.end, { year: true }).replace(/^\w+, /, '')}`;
+  const level = t.level || 1, levels = t.levels || 4;
+  document.title = `${t.program} — Level ${level}`;
+  $('#levels').innerHTML = [...Array(levels)].map((_, i) => `<i class="${i + 1 === level ? 'on' : i + 1 < level ? 'done' : ''}" title="Level ${i + 1}${i + 1 === level ? ' (this term)' : i + 1 > level ? ' — timetable not added yet' : ''}">${i + 1}</i>`).join('');
+  $('#term-sub').textContent = `Level ${level} of ${levels} · ${fmtDate(t.start, { year: true }).replace(/^\w+, /, '')} – ${fmtDate(t.end, { year: true }).replace(/^\w+, /, '')}`;
   const start = D.sow(D.parse(t.start)), end = D.parse(t.end);
   const totalWeeks = Math.ceil((D.add(end, 1) - start) / (7 * 864e5));
   const today = D.parse(D.today());
@@ -1555,7 +1558,7 @@ function buildICS() {
       `SUMMARY:${icsEsc((it.kind === 'assignment' ? 'DUE: ' : '') + (it.course ? codeLabel(it.course) + ' ' : '') + it.title)}`,
       `DESCRIPTION:${icsEsc(it.notes)}`, 'END:VEVENT']);
   }
-  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Level 1 Schedule//EN', 'CALSCALE:GREGORIAN', 'X-WR-CALNAME:Level 1 Schedule', ...ev.flat(), 'END:VCALENDAR'].join('\r\n');
+  return ['BEGIN:VCALENDAR', 'VERSION:2.0', `PRODID:-//${SCHED.term.program}//EN`, 'CALSCALE:GREGORIAN', `X-WR-CALNAME:${SCHED.term.program} — Level ${SCHED.term.level || 1}`, ...ev.flat(), 'END:VCALENDAR'].join('\r\n');
 }
 
 /* ================================================================== */
@@ -1655,7 +1658,7 @@ function buildPrint(from, to, opts) {
     ].filter(Boolean).join('');
     return `<div class="p-legend">${keys}${codes.map((c) => `<span class="lc" style="--c:${courseColor(c)}"><i></i><b>${codeLabel(c)}</b> ${esc(COURSE_SHORT[c] || SCHED.courses[c])}${(COURSE_INSTR[c] || []).length ? ` <span class="li">· ${esc(COURSE_INSTR[c].slice(0, 2).join(', '))}${COURSE_INSTR[c].length > 2 ? ' +' + (COURSE_INSTR[c].length - 2) : ''}</span>` : ''}</span>`).join('')}</div>`;
   };
-  const pageHead = (title, sub) => `<div class="p-head"><h3>Level 1 Schedule <span>· ${title}</span></h3><div>${sub}</div></div>`;
+  const pageHead = (title, sub) => `<div class="p-head"><h3>${esc(SCHED.term.program)} <span>· Level ${SCHED.term.level || 1} of ${SCHED.term.levels || 4} · ${title}</span></h3><div>${sub}</div></div>`;
   const groupLine = `${opts.mine ? `Pre-clinic ${esc(st.preGroup)} · Rad lab ${esc(st.radGroup)}` : 'All groups'} · printed ${fmtDate(D.today(), { year: true })}`;
   const weekTitle = (days) => {
     const a = D.parse(days[0]), b = D.parse(days[6]);

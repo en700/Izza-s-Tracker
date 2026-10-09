@@ -1,6 +1,6 @@
-# Level 1 Schedule
+# Pooky's Dental Hygiene Program
 
-A password-protected timetable and school-year tracker for Level 1 Dental Hygiene
+A password-protected timetable and school-year tracker for the dental hygiene program. It currently covers **Level 1 of 4**
 (Oct 5, 2026 – Mar 27, 2027). It's built from the official L1 timetable PDF, with the
 "Oct-26", "Dental Hygiene" and "Level 1" header rows and the Level 3 schedule removed.
 

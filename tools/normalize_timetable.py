@@ -118,6 +118,6 @@ for e in events:
     for k in [k for k, v in e.items() if v in (None, [], '')]: del e[k]
 ids = [e['id'] for e in events]; assert len(ids) == len(set(ids)), 'dup ids'
 events.sort(key=lambda e: (e['date'], e.get('start', '00:00')))
-json.dump({'term': {'name': 'Level 1 Schedule', 'program': 'Dental Hygiene', 'start': '2026-10-05', 'end': '2027-03-27'},
+json.dump({'term': {'name': 'Level 1', 'program': "Pooky's Dental Hygiene Program", 'level': 1, 'levels': 4, 'start': '2026-10-05', 'end': '2027-03-27'},
            'courses': COURSES, 'sessions': events}, open(sys.argv[2], 'w'), ensure_ascii=False, separators=(',', ':'))
 print(len(events))

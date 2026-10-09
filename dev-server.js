@@ -86,6 +86,6 @@ http
     }
   })
   .listen(process.env.PORT || 3000, () => {
-    console.log(`Level 1 Schedule running at http://localhost:${process.env.PORT || 3000}`);
+    console.log(`Pooky's Dental Hygiene Program running at http://localhost:${process.env.PORT || 3000}`);
     if (!process.env.APP_PASSWORD) console.warn('APP_PASSWORD is not set - every request will be refused.');
   });
