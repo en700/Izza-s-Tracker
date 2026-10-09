@@ -2671,15 +2671,38 @@ function seedDeadlines() {
 /* ================================================================== */
 /* Boot                                                                */
 /* ================================================================== */
+// Opened as a home-screen app (iOS/Android): always start on this week's timetable.
+const isHomeScreenApp = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+function goToTodaysWeek() {
+  ui.view = 'week';
+  ui.cursor = new Date();
+}
+
 (async function boot() {
   loadLocal();
   applyTheme();
   try { ui.view = localStorage.getItem('l1s:view') || 'week'; } catch {}
   if (!['week', 'month', 'agenda', 'tasks', 'notes', 'courses'].includes(ui.view)) ui.view = 'week';
+  const launchToday = isHomeScreenApp();
   showSyncState();
   await loadSchedule();
+  ensureLevel();
+  if (launchToday) goToTodaysWeek();
   render();
   await pullRemote();
   seedDeadlines();
+  // Syncing can switch the level being viewed, which moves the calendar; land back on today.
+  if (launchToday && ensureLevel() && ui.view === 'week') goToTodaysWeek();
   render();
 })();
+
+// Home-screen apps stay alive in the background: coming back after a while also returns to today.
+let hiddenAt = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { hiddenAt = Date.now(); return; }
+  if (isHomeScreenApp() && hiddenAt && Date.now() - hiddenAt > 30 * 60 * 1000 && !$('#modal-root').innerHTML) {
+    goToTodaysWeek();
+    ui.anim = 'view-enter';
+    render();
+  }
+});
