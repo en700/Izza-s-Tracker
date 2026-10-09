@@ -541,6 +541,7 @@ function renderHeader() {
   const open = data.items.filter((i) => statusOf(i) !== 'done' && i.kind !== 'event').length;
   $('#task-count').textContent = open ? String(open) : '';
   $$('#tabs button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.view === ui.view)));
+  document.body.classList.toggle('has-sidebar', ui.view === 'week' || ui.view === 'month');
 }
 
 function render() {
@@ -609,11 +610,16 @@ function legendHTML() {
 // The sidebar can fold into a thin strip; remembered per device.
 let legendCollapsed = false;
 try { legendCollapsed = localStorage.getItem('l1s:legend') === 'collapsed'; } catch {}
+const SMILEY = '<svg class="smiley" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#ffd43b" stroke="#e8a400" stroke-width="1"/><circle cx="8.6" cy="10" r="1.4" fill="#5c3b00"/><circle cx="15.4" cy="10" r="1.4" fill="#5c3b00"/><path d="M7.6 14c1 2 2.6 3 4.4 3s3.4-1 4.4-3" fill="none" stroke="#5c3b00" stroke-width="1.7" stroke-linecap="round"/><circle cx="6.6" cy="13.4" r="1.2" fill="#ff8fab" opacity=".7"/><circle cx="17.4" cy="13.4" r="1.2" fill="#ff8fab" opacity=".7"/></svg>';
+// The main "add" button lives at the top of the sidebar, above the legend.
+const newEntryBtn = (compact) => compact
+  ? `<button class="new-entry compact" data-action="new-item" title="New calendar entry (N)" aria-label="New calendar entry" aria-keyshortcuts="N">${SMILEY}<span class="ne-plus">+</span></button>`
+  : `<button class="new-entry" data-action="new-item" title="Add an event, due date, exam or reminder (N)" aria-keyshortcuts="N">${SMILEY}<span>New calendar entry</span><kbd>N</kbd></button>`;
 const withLegend = (main) => `<div class="with-legend ${legendCollapsed ? 'collapsed' : ''}"><div class="wl-main">${main}</div>${legendCollapsed ? `
-  <button class="legend-strip card" data-legend="open" title="Show legend & course filter" aria-label="Show legend and course filter" aria-expanded="false">
+  <div class="side-col">${newEntryBtn(true)}<button class="legend-strip card" data-legend="open" title="Show legend & course filter" aria-label="Show legend and course filter" aria-expanded="false">
     <span class="ls-arrow">‹</span><span class="ls-label">Legend & courses</span>
     <span class="ls-dots">${Object.keys(SCHED.courses).filter(courseShown).map((c) => `<i style="--c:${courseColor(c)}"></i>`).join('')}</span>
-  </button>` : legendHTML()}</div>`;
+  </button></div>` : `<div class="side-col">${newEntryBtn(false)}${legendHTML()}</div>`}</div>`;
 
 function weekSummary(days) {
   let campus = 0, online = 0, exams = 0;

@@ -24,7 +24,7 @@
       <span class="sync" id="sync-status" title="Where your notes and tasks are saved"></span>
       <button class="btn levelup locked" data-action="level-up" id="levelup-btn" title="LEVEL UP!"><span class="lu-ico" id="levelup-ico">🔒</span><b>LEVEL UP!</b><span class="lu-count" id="levelup-count"></span></button>
       <button class="btn primary btn-new" data-action="new-item" title="Add an event, due date, exam or reminder (N)" aria-keyshortcuts="N">
-        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg><span>New</span><kbd>N</kbd>
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg><span>New calendar entry</span><kbd>N</kbd>
       </button>
       <button class="btn" data-action="import" title="Import events (.ics, .csv, .json)">
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v10M6 9l4 4 4-4M4 16h12"/></svg><span>Import</span>
@@ -55,8 +55,8 @@
 
 <div id="modal-root"></div>
 <div id="print-root" aria-hidden="true"></div>
-<button class="fab" data-action="new-item" aria-label="Add an event, due date, exam or reminder" title="Add new">
-  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>New</span>
+<button class="fab" data-action="new-item" aria-label="New calendar entry" title="New calendar entry">
+  <svg class="smiley fab-smile" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#ffd43b" stroke="#e8a400" stroke-width="1"/><circle cx="8.6" cy="10" r="1.4" fill="#5c3b00"/><circle cx="15.4" cy="10" r="1.4" fill="#5c3b00"/><path d="M7.6 14c1 2 2.6 3 4.4 3s3.4-1 4.4-3" fill="none" stroke="#5c3b00" stroke-width="1.7" stroke-linecap="round"/><circle cx="6.6" cy="13.4" r="1.2" fill="#ff8fab" opacity=".7"/><circle cx="17.4" cy="13.4" r="1.2" fill="#ff8fab" opacity=".7"/></svg><span>New calendar entry</span>
 </button>
 <div id="toast" role="status" aria-live="polite"></div>
 <script src="/app.js" type="module"></script>
