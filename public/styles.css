@@ -329,8 +329,9 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
 .att-box:hover .att-tick { border-color: var(--ok); }
 .att-box:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .ev .att-box { position: absolute; right: 3px; bottom: 3px; z-index: 1; }
-.ev .att-box .att-lbl { display: none; }
-.ev:hover .att-box:not(.on) .att-lbl { display: inline; background: var(--card); padding: 0 3px; border-radius: 4px; }
+.ev .att-box .att-lbl { display: none; position: absolute; right: calc(100% + 4px); top: 50%; transform: translateY(-50%); white-space: nowrap;
+                       background: var(--card); padding: 1px 5px; border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,.15); pointer-events: none; }
+.ev:hover .att-box:not(.on) .att-lbl { display: block; }
 .ev.attended { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent); }
 .row-ev.has-att { padding-right: 104px; }
 .row-ev .att-box { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); padding: 6px 9px; background: var(--card); border: 1px solid var(--line); font-size: 12px; }
