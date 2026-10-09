@@ -34,9 +34,12 @@ A password-protected timetable and school-year tracker for Level 1 Dental Hygien
   a priority and file attachments. Use **Import** to load a `.ics` calendar (Brightspace/D2L,
   Google, Outlook), a `.csv` file or a backup. **Settings → Export calendar** downloads an `.ics`
   file of your schedule.
-- **Print.** Printouts are landscape and colour-coded. *Compact list* fills each page with as many
-  weeks as fit (the whole term takes about 8 pages, versus 24 in the original PDF). *Time grid* fits 1–2 weeks per page.
-  You can print only your groups.
+- **Print** (landscape, made to work in black and white: in person = solid box with a thick bar, online = dashed box,
+  exam/test = thick double border + the word EXAM/TEST). Each page's legend lists only the courses on it.
+  - *Weekly planner* (1 page per week): the week's timetable, then a section per class. Each section has a row for every
+    session with ☐ Prep ☐ Att ☐ Rev checkboxes (already ticked if you ticked them on the site), what's due that week,
+    the class notes you wrote on the site and ruled lines for handwritten notes, plus a *Reminders & to-do* section.
+  - *Compact list* (whole term ≈ 8 pages) and *Time grid* (2 weeks per page) for timetable-only printouts.
 - **Password protection** for every page, file and API call. Sessions last 30 days.
 
 Keyboard shortcuts: `←`/`→` change week or month, `T` jumps to today, `N` adds a new item,
