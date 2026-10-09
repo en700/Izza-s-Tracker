@@ -23,8 +23,8 @@
     <div class="top-actions">
       <span class="sync" id="sync-status" title="Where your notes and tasks are saved"></span>
       <button class="btn levelup locked" data-action="level-up" id="levelup-btn" title="LEVEL UP!"><span class="lu-ico" id="levelup-ico">🔒</span><b>LEVEL UP!</b><span class="lu-count" id="levelup-count"></span></button>
-      <button class="btn primary" data-action="new-item" title="Add an assignment, due date or event (N)">
-        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg><span>New</span>
+      <button class="btn primary btn-new" data-action="new-item" title="Add an event, due date, exam or reminder (N)" aria-keyshortcuts="N">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg><span>New</span><kbd>N</kbd>
       </button>
       <button class="btn" data-action="import" title="Import events (.ics, .csv, .json)">
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v10M6 9l4 4 4-4M4 16h12"/></svg><span>Import</span>
@@ -55,6 +55,9 @@
 
 <div id="modal-root"></div>
 <div id="print-root" aria-hidden="true"></div>
+<button class="fab" data-action="new-item" aria-label="Add an event, due date, exam or reminder" title="Add new">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>New</span>
+</button>
 <div id="toast" role="status" aria-live="polite"></div>
 <script src="/app.js" type="module"></script>
 </body>
