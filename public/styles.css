@@ -108,6 +108,7 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
 .toolbar h2 { font-size: 16px; margin: 0 6px 0 4px; white-space: nowrap; }
 .toolbar .spacer { flex: 1; }
 .toolbar select, .toolbar input[type=search] { width: auto; min-height: 32px; padding: 5px 8px; font-size: 13px; }
+.toolbar input.wide-search { flex: 1 1 360px; min-width: 260px; max-width: 560px; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--card); }
 .seg button { border: 0; background: none; padding: 5px 10px; font-size: 12px; cursor: pointer; color: var(--muted); font-weight: 600; }
 .seg button + button { border-left: 1px solid var(--line); }

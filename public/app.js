@@ -692,7 +692,7 @@ function renderAgenda(v) {
   }
   v.innerHTML = `<div class="toolbar">
       <h2>Agenda</h2>
-      <input type="search" id="ag-q" placeholder="Search classes, notes, instructors…" value="${esc(ui.agendaQuery)}" style="min-width:220px">
+      <input type="search" id="ag-q" class="wide-search" placeholder="Search classes, notes, instructors…" value="${esc(ui.agendaQuery)}">
       <select id="ag-course" aria-label="Course"><option value="">All courses</option>${Object.keys(SCHED.courses).map((c) => `<option value="${c}" ${c === ui.agendaCourse ? 'selected' : ''}>${codeLabel(c)} · ${esc(COURSE_SHORT[c])}</option>`).join('')}</select>
       <label class="check small"><input type="checkbox" id="ag-past" ${ui.agendaPast ? 'checked' : ''}> Include past</label>
       <span class="spacer"></span>
