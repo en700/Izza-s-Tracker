@@ -85,6 +85,11 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
 .topbar { display: flex; align-items: center; gap: 16px; padding: 14px 0 10px; flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .brand .logo { width: 34px; height: 34px; }
+.logo .spark { transform-box: fill-box; transform-origin: center; animation: twinkle 2.6s ease-in-out infinite; }
+.logo .s2 { animation-delay: .9s; }
+.logo .s3 { animation-delay: 1.7s; }
+@keyframes twinkle { 0%, 100% { opacity: 1; transform: scale(1) rotate(0deg); } 50% { opacity: .35; transform: scale(.55) rotate(45deg); } }
+@media (prefers-reduced-motion: reduce) { .logo .spark { animation: none; } }
 .brand h1 { font-size: 18px; margin: 0; letter-spacing: -.01em; }
 .brand .sub { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
 .levels { display: inline-flex; gap: 2px; }

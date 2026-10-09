@@ -1,4 +1,4 @@
-// Pooky's Dental Hygiene Program — timetable, notes, checklists and assignment tracker (Level 1 of 4).
+// Pookie's Dental Hygiene Program — timetable, notes, checklists and assignment tracker (Level 1 of 4).
 // Plain ES module, no build step. Timetable data lives in /schedule.json;
 // everything the user adds lives in `data` (localStorage + optional cloud sync).
 

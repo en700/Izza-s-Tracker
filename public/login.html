@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>Pooky's Dental Hygiene Program — Sign in</title>
+<title>Pookie's Dental Hygiene Program — Sign in</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <style>
   :root { --bg:#f5f6fa; --card:#fff; --text:#1d2433; --muted:#667085; --line:#dfe3ea; --accent:#3b5bdb; --danger:#c92a2a; }
@@ -22,12 +22,16 @@
   button[disabled] { opacity:.6; cursor:default; }
   .err { color:var(--danger); font-size:13px; min-height:18px; margin-top:10px; }
   .logo { width:40px; height:40px; margin-bottom:12px; }
+  .logo .spark { transform-box: fill-box; transform-origin: center; animation: twinkle 2.6s ease-in-out infinite; }
+  .logo .s2 { animation-delay: .9s; } .logo .s3 { animation-delay: 1.7s; }
+  @keyframes twinkle { 0%, 100% { opacity: 1; transform: scale(1) rotate(0deg); } 50% { opacity: .35; transform: scale(.55) rotate(45deg); } }
+  @media (prefers-reduced-motion: reduce) { .logo .spark { animation: none; } }
 </style>
 </head>
 <body>
 <form id="f" autocomplete="on">
-  <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#3b5bdb"/><path d="M10.2 6.5C7.3 6.5 5.8 8.9 5.8 11.8c0 3 1.5 5 2.5 7.6.9 2.3 1.2 6.1 3.1 6.1 1.8 0 2-4.4 3-5.9.5-.8 1-1.1 1.6-1.1s1.1.3 1.6 1.1c1 1.5 1.2 5.9 3 5.9 1.9 0 2.2-3.8 3.1-6.1 1-2.6 2.5-4.6 2.5-7.6 0-2.9-1.5-5.3-4.4-5.3-2.3 0-3.6 1.3-5.8 1.3s-3.5-1.3-5.8-1.3z" fill="#fff"/><path d="M9.4 10.6c.3-1 1-1.6 2-1.8" fill="none" stroke="#ffd43b" stroke-width="1.6" stroke-linecap="round"/></svg>
-  <h1>Pooky&rsquo;s Dental Hygiene Program</h1>
+  <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#3b5bdb"/><path d="M10.2 6.5C7.3 6.5 5.8 8.9 5.8 11.8c0 3 1.5 5 2.5 7.6.9 2.3 1.2 6.1 3.1 6.1 1.8 0 2-4.4 3-5.9.5-.8 1-1.1 1.6-1.1s1.1.3 1.6 1.1c1 1.5 1.2 5.9 3 5.9 1.9 0 2.2-3.8 3.1-6.1 1-2.6 2.5-4.6 2.5-7.6 0-2.9-1.5-5.3-4.4-5.3-2.3 0-3.6 1.3-5.8 1.3s-3.5-1.3-5.8-1.3z" fill="#fff"/><path d="M9.4 10.6c.3-1 1-1.6 2-1.8" fill="none" stroke="#ffd43b" stroke-width="1.6" stroke-linecap="round"/><path class="spark s1" d="M25.6 2.4000000000000004Q25.6 6.2 29.400000000000002 6.2Q25.6 6.2 25.6 10.0Q25.6 6.2 21.8 6.2Q25.6 6.2 25.6 2.4000000000000004Z" fill="#ffd43b"/><path class="spark s2" d="M6.4 21.6Q6.4 23.8 8.600000000000001 23.8Q6.4 23.8 6.4 26.0Q6.4 23.8 4.2 23.8Q6.4 23.8 6.4 21.6Z" fill="#ffd43b"/><path class="spark s3" d="M27.2 12.0Q27.2 13.4 28.599999999999998 13.4Q27.2 13.4 27.2 14.8Q27.2 13.4 25.8 13.4Q27.2 13.4 27.2 12.0Z" fill="#ffd43b"/></svg>
+  <h1>Pookie&rsquo;s Dental Hygiene Program</h1>
   <p>This page is private. Enter the password to continue.</p>
   <label for="pw">Password</label>
   <input id="pw" name="password" type="password" autocomplete="current-password" required autofocus>
