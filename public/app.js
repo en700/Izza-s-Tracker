@@ -550,10 +550,20 @@ function render() {
   const v = $('#view');
   const scroll = window.scrollY;
   ({ week: renderWeek, month: renderMonth, agenda: renderAgenda, tasks: renderTasks, notes: renderNotes, courses: renderCourses })[ui.view](v);
+  // Animate only on tab switches and week/month navigation, never on ordinary re-renders.
+  if (ui.anim) {
+    const target = $('.week, .month, .daylist', v) || v;
+    for (const el of [v, target]) el.classList.remove('view-enter', 'nav-next', 'nav-prev');
+    void target.offsetWidth;
+    target.classList.add(target === v ? 'view-enter' : ui.anim);
+    if (target !== v) $('.toolbar h2', v)?.classList.add('view-enter');
+    ui.anim = null;
+  }
   window.scrollTo(0, scroll);
 }
 
 function setView(view) {
+  if (view !== ui.view) ui.anim = 'view-enter';
   ui.view = view;
   try { localStorage.setItem('l1s:view', view); } catch {}
   render();
@@ -1376,20 +1386,29 @@ function renderCourses(v) {
 /* Modals                                                              */
 /* ================================================================== */
 function openModal(html, { wide = false, color = '', onClose } = {}) {
-  closeModal();
+  closeModal({ instant: true });
   const root = $('#modal-root');
   root.innerHTML = `<div class="modal-backdrop"><div class="modal ${wide ? 'wide' : ''}" role="dialog" aria-modal="true" style="${color ? `--c:${color}` : ''}">${html}</div></div>`;
   const back = root.firstElementChild;
   back.addEventListener('mousedown', (e) => { if (e.target === back) closeModal(); });
-  $$('[data-close]', root).forEach((b) => (b.onclick = closeModal));
+  $$('[data-close]', root).forEach((b) => (b.onclick = () => closeModal()));
   closeModal.onClose = onClose;
   closeModal.lastFocus = document.activeElement;
   setTimeout(() => (root.querySelector('[autofocus]') || root.querySelector('.modal button, .modal input'))?.focus(), 20);
   return root.querySelector('.modal');
 }
-function closeModal() {
+const reducedMotionMQ = matchMedia('(prefers-reduced-motion: reduce)');
+function closeModal({ instant = false } = {}) {
   const root = $('#modal-root');
   if (!root.innerHTML) return;
+  // Leave a non-interactive copy behind to fade out; the real modal is gone immediately.
+  const back = root.firstElementChild;
+  if (!instant && back && !reducedMotionMQ.matches) {
+    back.classList.add('closing');
+    back.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(back);
+    setTimeout(() => back.remove(), 170);
+  }
   root.innerHTML = '';
   const cb = closeModal.onClose;
   closeModal.onClose = null;
@@ -2435,6 +2454,7 @@ function openLevelWizard(n, { step = 0 } = {}) {
     $('#lw-sub', modal).textContent = `Step ${pos + 1} of ${order.length}: ${STEPS[i]}`;
     $('#lw-steps', modal).innerHTML = order.map((k, j) => `<button type="button" class="lw-step ${k === i ? 'on' : j < pos ? 'past' : ''}" ${existing || l1 || j < pos ? `data-go="${k}"` : 'disabled'}>${j + 1}. ${STEPS[k]}</button>`).join('');
     body.innerHTML = views[i]();
+    body.classList.remove('step-enter'); void body.offsetWidth; body.classList.add('step-enter');
     $('#lw-foot', modal).innerHTML = `${prev !== undefined ? '<button class="btn left" id="lw-back">← Back</button>' : ''}<button class="btn" data-close>Cancel</button>
       ${next !== undefined ? '<button class="btn primary" id="lw-next">Next →</button>' : `<button class="btn primary levelup-go" id="lw-done">${existing || l1 ? 'Save changes' : `★ Start Level ${n}`}</button>`}`;
     $$('[data-close]', modal).forEach((b) => (b.onclick = closeModal));
@@ -2531,6 +2551,7 @@ document.addEventListener('pointerdown', (e) => {
 /* Events / navigation                                                 */
 /* ================================================================== */
 function navigate(dir) {
+  ui.anim = dir > 0 ? 'nav-next' : dir < 0 ? 'nav-prev' : 'view-enter';
   if (dir === 0) ui.cursor = new Date();
   else if (ui.view === 'month') ui.cursor = D.addMonths(ui.cursor, dir);
   else ui.cursor = D.add(ui.cursor, 7 * dir);
