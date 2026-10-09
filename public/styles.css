@@ -126,6 +126,16 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
 .with-legend { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 14px; align-items: start; }
 .side-legend { position: sticky; top: 10px; padding: 12px; font-size: 12px; max-height: calc(100vh - 20px); overflow: auto; }
 .side-legend h3 { font-size: 13px; margin: 0; }
+.with-legend.collapsed { grid-template-columns: minmax(0, 1fr) 34px; }
+.lg-collapse { display: block; margin: -2px 0 8px auto; border: 1px solid var(--line); background: var(--card); color: var(--muted);
+               border-radius: 6px; padding: 2px 8px; font-size: 12px; cursor: pointer; }
+.lg-collapse:hover, .legend-strip:hover { color: var(--text); border-color: var(--faint); }
+.legend-strip { position: sticky; top: 10px; width: 34px; padding: 10px 0; display: flex; flex-direction: column; align-items: center; gap: 10px;
+                cursor: pointer; color: var(--muted); font: inherit; font-size: 12px; font-weight: 600; }
+.legend-strip .ls-arrow { font-size: 16px; line-height: 1; }
+.legend-strip .ls-label { writing-mode: vertical-rl; white-space: nowrap; }
+.legend-strip .ls-dots { display: flex; flex-direction: column; gap: 4px; }
+.legend-strip .ls-dots i { width: 10px; height: 10px; border-radius: 3px; background: var(--c); }
 .lg-head { display: flex; align-items: baseline; justify-content: space-between; margin: 14px 0 6px; }
 .link-btn { border: 0; background: none; color: var(--accent); cursor: pointer; font-size: 12px; padding: 0; }
 .link-btn:hover { text-decoration: underline; }
@@ -144,7 +154,11 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
 .lg-courses tr.off td:not(.cb) { opacity: .4; }
 .lg-courses tr.off td.cd { text-decoration: line-through; }
 @media (max-width: 1100px) {
-  .with-legend { grid-template-columns: 1fr; }
+  .with-legend, .with-legend.collapsed { grid-template-columns: 1fr; }
+  .legend-strip { position: static; width: 100%; flex-direction: row; padding: 8px 12px; }
+  .legend-strip .ls-label { writing-mode: horizontal-tb; }
+  .legend-strip .ls-arrow { transform: rotate(-90deg); }
+  .legend-strip .ls-dots { flex-direction: row; margin-left: auto; }
   .side-legend { position: static; max-height: none; }
 }
 

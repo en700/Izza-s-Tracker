@@ -420,6 +420,7 @@ function legendHTML() {
   const codes = Object.keys(SCHED.courses);
   const rad = esc(data.settings.radGroup);
   return `<aside class="side-legend card" aria-label="Legend and course filter">
+    <button class="lg-collapse" data-legend="close" title="Hide sidebar" aria-label="Hide sidebar" aria-expanded="true">Hide ›</button>
     <table class="lg-table">
       <thead><tr><th colspan="2">Key</th></tr></thead>
       <tbody>
@@ -447,7 +448,14 @@ function legendHTML() {
     </table>
   </aside>`;
 }
-const withLegend = (main) => `<div class="with-legend"><div class="wl-main">${main}</div>${legendHTML()}</div>`;
+// The sidebar can fold into a thin strip; remembered per device.
+let legendCollapsed = false;
+try { legendCollapsed = localStorage.getItem('l1s:legend') === 'collapsed'; } catch {}
+const withLegend = (main) => `<div class="with-legend ${legendCollapsed ? 'collapsed' : ''}"><div class="wl-main">${main}</div>${legendCollapsed ? `
+  <button class="legend-strip card" data-legend="open" title="Show legend & course filter" aria-label="Show legend and course filter" aria-expanded="false">
+    <span class="ls-arrow">‹</span><span class="ls-label">Legend & courses</span>
+    <span class="ls-dots">${Object.keys(SCHED.courses).filter(courseShown).map((c) => `<i style="--c:${courseColor(c)}"></i>`).join('')}</span>
+  </button>` : legendHTML()}</div>`;
 
 function weekSummary(days) {
   let campus = 0, online = 0, exams = 0;
@@ -1686,10 +1694,15 @@ function navigate(dir) {
 
 document.addEventListener('click', (e) => {
   if (e.target.matches('[data-toggle]')) return;
-  const t = e.target.closest('[data-action],[data-nav],[data-open],[data-goto],[data-view],[data-others],[data-courses-all]');
+  const t = e.target.closest('[data-action],[data-nav],[data-open],[data-goto],[data-view],[data-others],[data-courses-all],[data-legend]');
   if (!t) return;
   if (t.dataset.view) return setView(t.dataset.view);
   if (t.dataset.nav !== undefined) return navigate(+t.dataset.nav);
+  if (t.dataset.legend) {
+    legendCollapsed = t.dataset.legend === 'close';
+    try { localStorage.setItem('l1s:legend', legendCollapsed ? 'collapsed' : 'open'); } catch {}
+    return render();
+  }
   if (t.dataset.coursesAll) return setHiddenCourses(t.dataset.coursesAll === 'hide' ? Object.keys(SCHED.courses) : []);
   if (t.dataset.others) { data.settings.others = t.dataset.others; data.settingsUpdatedAt = Date.now(); return commit(); }
   if (t.dataset.goto) { ui.cursor = D.parse(t.dataset.goto); return setView('week'); }
