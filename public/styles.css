@@ -308,10 +308,17 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
 table.deadlines { width: 100%; border-collapse: collapse; min-width: 760px; font-size: 13px; }
 .deadlines th { text-align: left; font-size: 12px; font-weight: 600; color: var(--muted); padding: 9px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .deadlines td { padding: 6px 10px; border-bottom: 1px solid var(--line-2); vertical-align: middle; }
-.deadlines th:nth-child(1), .deadlines td:nth-child(1) { width: 64px; }
+.deadlines th:nth-child(1), .deadlines td:nth-child(1) { width: 210px; }
+.deadlines td.cls { white-space: nowrap; }
+.deadlines .cls-name { margin-left: 6px; color: var(--muted); font-size: 12px; }
 .deadlines th:nth-child(3), .deadlines td:nth-child(3) { width: 200px; }
 .deadlines th:nth-child(4), .deadlines td:nth-child(4) { width: 132px; }
-.deadlines th:nth-child(5), .deadlines td:nth-child(5), .deadlines th:nth-child(6), .deadlines td:nth-child(6) { width: 96px; }
+.deadlines th:nth-child(5), .deadlines td:nth-child(5) { width: 70px; }
+.deadlines th:nth-child(6), .deadlines td:nth-child(6) { width: 56px; }
+.deadlines td:nth-child(5), .deadlines td:nth-child(6) { padding-left: 4px; padding-right: 4px; }
+.deadlines input.cell { width: 100%; padding: 3px 4px; text-align: center; }
+.quick-add td:nth-child(1) select { width: 100%; }
+.quick-add .btn { width: 100%; justify-content: center; padding: 0 4px; }
 .deadlines tbody tr:hover { background: var(--card-2); }
 .deadlines .nm { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-height: 34px; }
 .deadlines .link { border: 0; background: none; padding: 0; cursor: pointer; text-align: left; font-weight: 600; color: var(--text); }
@@ -365,7 +372,8 @@ input.cell:hover { border-color: var(--line); }
 .modal header { display: flex; align-items: flex-start; gap: 10px; padding: 16px 18px 10px; border-bottom: 1px solid var(--line-2); position: sticky; top: 0; background: var(--card); z-index: 1; }
 .modal header h2 { margin: 0; font-size: 17px; flex: 1; }
 .modal header .bar { width: 6px; align-self: stretch; border-radius: 3px; background: var(--c, var(--accent)); }
-.modal .body { padding: 14px 18px; display: grid; gap: 12px; }
+.modal .body { padding: 14px 18px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.modal .body > * { min-width: 0; }
 .modal footer { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 18px 16px; border-top: 1px solid var(--line-2); flex-wrap: wrap; }
 .modal footer .left { margin-right: auto; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -377,10 +385,15 @@ input.cell:hover { border-color: var(--line); }
 .subtasks { display: grid; gap: 6px; }
 .subtask { display: flex; gap: 8px; align-items: center; }
 .subtask input[type=text] { min-height: 30px; padding: 4px 8px; }
-.attach-list { display: grid; gap: 6px; }
-.attach { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; }
-.attach a { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dropzone { border: 1.5px dashed var(--line); border-radius: 10px; padding: 18px; text-align: center; color: var(--muted); font-size: 13px; cursor: pointer; }
+.form-section { display: grid; gap: 6px; min-width: 0; }
+.form-label { font-size: 12px; font-weight: 600; color: var(--muted); }
+.form-section > .btn { justify-self: start; }
+.attach-list { display: grid; gap: 6px; min-width: 0; }
+.attach-list:empty { display: none; }
+.attach { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; min-width: 0; }
+.attach .muted { white-space: nowrap; }
+.attach a { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dropzone { display: block; border: 1.5px dashed var(--line); border-radius: 10px; padding: 18px; text-align: center; color: var(--muted); font-size: 13px; cursor: pointer; }
 .dropzone.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); }
 .preview-list { max-height: 300px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
 .preview-list label { display: flex; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--line-2); font-size: 13px; align-items: center; }

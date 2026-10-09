@@ -803,7 +803,7 @@ function renderTasks(v) {
     const it = r.item;
     const subs = it?.subtasks || [];
     return `${divider}<tr class="${r.status === 'done' ? 'is-done' : ''} ${r.src === 's' ? 'from-tt' : ''}">
-      <td>${r.code ? `<span class="chip crs" style="--c:${c}">${codeLabel(r.code).replace('DH ', '')}</span>` : '<span class="muted">—</span>'}</td>
+      <td class="cls">${r.code ? `<span class="chip crs" style="--c:${c}">${codeLabel(r.code)}</span><span class="cls-name">${esc(COURSE_SHORT[r.code] || '')}</span>` : '<span class="muted">—</span>'}</td>
       <td><div class="nm"><button class="link" data-open="${r.key}">${esc(r.name)}</button>
         ${r.kind === 'exam' || r.kind === 'test' ? kindChip({ kind: r.kind === 'test' ? 'test' : 'exam' }) : ''}
         ${r.src === 's' ? '<span class="muted small">timetable</span>' : ''}
@@ -837,14 +837,14 @@ function renderTasks(v) {
     </div>
     <div class="card table-wrap">
       <table class="deadlines">
-        <thead><tr><th>Class</th><th>Name</th><th>Due date</th><th>Status</th><th>Grade</th><th>Weight %</th></tr></thead>
+        <thead><tr><th>Class</th><th>Name</th><th>Due date</th><th>Status</th><th>Grade</th><th title="Weight (% of course)">Wt %</th></tr></thead>
         <tbody>${body || `<tr><td colspan="6" class="empty">${all.length ? 'Nothing matches these filters.' : 'No deadlines yet — add one below.'}</td></tr>`}</tbody>
         <tfoot><tr class="quick-add">
-          <td><select id="qa-course" aria-label="Class"><option value="">—</option>${Object.keys(SCHED.courses).map((c) => `<option value="${c}" ${c === ui.taskCourse ? 'selected' : ''}>${codeLabel(c).replace('DH ', '')}</option>`).join('')}</select></td>
+          <td><select id="qa-course" aria-label="Class"><option value="">—</option>${Object.keys(SCHED.courses).map((c) => `<option value="${c}" ${c === ui.taskCourse ? 'selected' : ''}>${codeLabel(c)} · ${esc(COURSE_SHORT[c])}</option>`).join('')}</select></td>
           <td><input type="text" id="qa-name" placeholder="+ Add a deadline…" aria-label="Name"></td>
           <td><div class="qa-when"><input type="date" id="qa-date" value="${today}" aria-label="Due date"><input type="time" id="qa-time" aria-label="Due time"></div></td>
           <td><select id="qa-status" class="status" aria-label="Status">${Object.entries(STATUS).map(([k, n]) => `<option value="${k}">${n}</option>`).join('')}</select></td>
-          <td><input type="text" class="cell" id="qa-weight" placeholder="Weight %" inputmode="decimal" aria-label="Weight"></td>
+          <td><input type="text" class="cell" id="qa-weight" placeholder="Wt %" inputmode="decimal" aria-label="Weight (% of course)"></td>
           <td><button class="btn primary sm" id="qa-add">Add</button></td>
         </tr></tfoot>
       </table>
@@ -1133,10 +1133,10 @@ function openItemEditor(seed = {}) {
       </div>
       <label class="field" id="it-mode-wrap">Where<select id="it-mode"><option value="">Not specified</option><option value="in-person">In person</option><option value="online">Online</option></select></label>
       <label class="field">Notes<textarea id="it-notes" placeholder="Instructions, links, page numbers…">${esc(it.notes || '')}</textarea></label>
-      <div class="field"><span class="field" style="display:block">Checklist</span>
+      <div class="form-section"><div class="form-label">Checklist</div>
         <div class="subtasks" id="it-subs"></div>
         <button type="button" class="btn sm" id="it-sub-add" style="justify-self:start;margin-top:6px">${ICON.plus} Add step</button></div>
-      <div class="field"><span class="field" style="display:block">Attachments</span>
+      <div class="form-section"><div class="form-label">Attachments</div>
         <div class="attach-list" id="it-files"></div>
         <label class="dropzone" id="it-drop">Drop files here or <u>browse</u><input type="file" id="it-file" multiple hidden></label>
         <div class="muted small">${sync.cloud ? 'Files up to 2.5 MB, saved to the cloud.' : 'Cloud sync is off: files up to 1 MB are kept on this device only.'}</div></div>
@@ -1179,7 +1179,7 @@ function openItemEditor(seed = {}) {
   $('#it-sub-add').onclick = () => { it.subtasks.push({ id: uid('s'), text: '', done: false }); drawSubs(); $$('[data-st]', modal).at(-1).focus(); };
 
   const drawFiles = () => {
-    $('#it-files').innerHTML = it.attachments.map((f, i) => `<div class="attach">${ICON.clip}<a href="#" data-fo="${i}">${esc(f.name)}</a>
+    $('#it-files').innerHTML = it.attachments.map((f, i) => `<div class="attach">${ICON.clip}<a href="#" data-fo="${i}" title="${esc(f.name)}">${esc(f.name)}</a>
       <span class="muted small">${(f.size / 1024).toFixed(0)} KB</span><button type="button" class="icon-btn" data-fd="${i}" aria-label="Remove">${ICON.trash.replace('<svg', '<svg style="width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2"')}</button></div>`).join('');
     $$('[data-fo]', modal).forEach((a) => (a.onclick = (e) => { e.preventDefault(); openAttachment(it.attachments[a.dataset.fo]); }));
     $$('[data-fd]', modal).forEach((b) => (b.onclick = () => {
