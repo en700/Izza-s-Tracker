@@ -34,6 +34,19 @@ A password-protected timetable and school-year tracker for the dental hygiene pr
   a priority and file attachments. Use **Import** to load a `.ics` calendar (Brightspace/D2L,
   Google, Outlook), a `.csv` file or a backup. **Settings → Export calendar** downloads an `.ics`
   file of your schedule.
+- **LEVEL UP!** (4 levels). The button stays locked 🔒 until every course in the current level is complete. A course counts as
+  complete once its last class is over, or when you mark it complete on the Courses page or in the lock dialog. Once unlocked, it opens
+  a wizard for the next level: term dates and days off, then courses (code, name, instructor, colour), then each course's weekly class
+  periods (days, times, lecture/lab/clinic, in person or online, room, every week or every 2 weeks, optional date range), then a review.
+  The 1–4 boxes in the header switch between levels you've set up. Level 1 can also get extra courses and periods
+  (Courses → *Add courses & class periods*) on top of the official timetable.
+- **Google Calendar-style events.** Drag on an empty part of the week grid to create an event; a quick-add card opens with categories
+  (📚 Study, 📝 Prep, 🚌 Commute, 💼 Work, 🏃 Exercise, 🩺 Appointment, 🎉 Social, ⭐ Other). Drag your own events to move them, and drag
+  their bottom edge to resize. Events can repeat (daily, weekdays, weekly on chosen days, monthly, every N, until a date). Editing or
+  deleting one occurrence asks *This event / This and following / All events*. Events can also be all-day and have a location, a colour
+  or a duplicate. Repeating events export to `.ics` with their repeat rules.
+- **Attended ticks** on every class in the week grid and the phone list, so you can mark attendance without opening the class.
+- **Hearts & stars** ♥★ burst out of some clicks (can be turned off in Settings, and stay off if you've asked your device to reduce motion).
 - **Print** (landscape, made to work in black and white: in person = solid box with a thick bar, online = dashed box,
   exam/test = thick double border + the word EXAM/TEST). Each page's legend lists only the courses on it.
   - *Weekly planner* (1 page per week): the week's timetable, then a section per class. Each section has a row for every

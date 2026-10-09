@@ -102,38 +102,122 @@ const COURSE_SHORT = {
   DH109: 'Head & Neck Anatomy', DH110: 'Prof Issues I', DH111: 'Psych for the HP', DH112: 'Oral Histo & Embryo', DH113: 'Rad Lab',
   L1O: 'Level 1 Orientation',
 };
-const codeLabel = (c) => (c ? esc(c.replace(/^DH/, 'DH ')) : '');
-const courseColor = (c) => (c && SCHED.courses[c] ? `var(--${c})` : 'var(--PROGRAM)');
+const codeLabel = (c) => (c ? esc(c.replace(/^DH(?=\d)/, 'DH ')) : '');
+// Level 1 courses have CSS colour variables; courses added for later levels carry their own colour.
+const L1_SHORT = { ...COURSE_SHORT };
+const CUSTOM_COLORS = {};
+let BASE_L1 = null;
+const courseColor = (c) => (!c ? 'var(--PROGRAM)' : CUSTOM_COLORS[c] || (L1_SHORT[c] ? `var(--${c})` : 'var(--PROGRAM)'));
 const courseOptions = (sel) =>
   `<option value="">— None —</option>` +
-  Object.entries(SCHED.courses).map(([c, n]) => `<option value="${c}" ${c === sel ? 'selected' : ''}>${codeLabel(c)} · ${esc(n)}</option>`).join('');
+  Object.entries(SCHED.courses).map(([c, n]) => `<option value="${esc(c)}" ${c === sel ? 'selected' : ''}>${codeLabel(c)} · ${esc(n)}</option>`).join('') +
+  (sel && !SCHED.courses[sel] ? `<option value="${esc(sel)}" selected>${codeLabel(sel)}${COURSE_SHORT[sel] ? ' · ' + esc(COURSE_SHORT[sel]) : ''}</option>` : '');
+
+const MAX_LEVEL = 4;
+const PERIOD_TYPES = { lecture: 'Lecture', lab: 'Lab', clinic: 'Clinic', seminar: 'Seminar', other: 'Other' };
+const PALETTE = ['#1971c2', '#e8590c', '#2f9e44', '#6741d9', '#d6336c', '#0c8599', '#b08900', '#a61e4d', '#364fc7', '#66a80f', '#8d5524', '#ae3ec9', '#087f5b', '#495057'];
+const currentLevel = () => clamp(+data.settings.currentLevel || 1, 1, MAX_LEVEL);
+const levelAvailable = (n) => n === 1 || !!data.levels?.[n];
 
 async function loadSchedule() {
   const res = await fetch('/schedule.json', { cache: 'no-cache' });
   if (res.status === 401) { location.href = '/login'; return; }
-  SCHED = await res.json();
+  BASE_L1 = await res.json();
+  for (const s of BASE_L1.sessions) s.src = 's';
+}
+
+// Turn a level's courses + weekly periods into dated sessions, like the Level 1 timetable.
+function buildLevelSchedule(n, L) {
+  const courses = Object.fromEntries((L.courses || []).map((c) => [c.code, c.name]));
+  const sessions = [];
+  const off = new Map();
+  for (const b of L.breaks || []) {
+    if (!b.from) continue;
+    for (let d = D.parse(b.from); D.iso(d) <= (b.to || b.from); d = D.add(d, 1)) off.set(D.iso(d), b.label || 'No classes');
+  }
+  for (const [iso, label] of off) sessions.push({ id: `b_${n}_${iso}`, date: iso, allDay: true, kind: 'closure', title: label, mode: 'none', src: 's' });
+  for (const p of L.periods || []) {
+    const c = (L.courses || []).find((x) => x.code === p.code) ||
+      (n === 1 && BASE_L1.courses[p.code] ? { code: p.code, name: BASE_L1.courses[p.code], instructor: '' } : null);
+    if (!c || !p.start || !p.end || !(p.days || []).length) continue;
+    const from = p.from && p.from > L.start ? p.from : L.start;
+    const until = p.until && p.until < L.end ? p.until : L.end;
+    const week0 = D.sow(D.parse(from));
+    for (let d = D.parse(from); D.iso(d) <= until; d = D.add(d, 1)) {
+      const iso = D.iso(d);
+      if (!p.days.includes(d.getDay()) || off.has(iso)) continue;
+      if ((p.every || 1) > 1 && Math.round((D.sow(d) - week0) / (7 * 864e5)) % p.every) continue;
+      sessions.push({
+        id: `p_${p.id}_${iso}`, src: 's', date: iso, start: p.start, end: p.end, code: c.code, course: c.name, title: c.name,
+        mode: p.mode || 'in-person', type: p.type || 'lecture', kind: 'class', periodId: p.id, level: n,
+        detail: [p.type && p.type !== 'lecture' ? PERIOD_TYPES[p.type] : '', p.location].filter(Boolean).join(' · ') || undefined,
+        instructors: c.instructor ? [c.instructor] : [],
+      });
+    }
+  }
+  sessions.sort((a, b) => (a.date + (a.start || '')).localeCompare(b.date + (b.start || '')));
+  return { term: { name: `Level ${n}`, program: BASE_L1.term.program, level: n, levels: MAX_LEVEL, start: L.start, end: L.end }, courses, sessions };
+}
+
+let levelSig = '';
+// (Re)build SCHED and its indexes for the level being viewed; cheap no-op if nothing changed.
+function ensureLevel() {
+  let n = currentLevel();
+  if (!levelAvailable(n)) n = 1;
+  const L = data.levels?.[n] || null;
+  const sig = n + ':' + (L ? L.updatedAt : 0) + ':' + Object.values(data.levels || {}).map((x) => x.updatedAt).join(',');
+  if (sig === levelSig) return false;
+  const changedLevel = !levelSig.startsWith(n + ':');
+  levelSig = sig;
+  if (n === 1) {
+    // Official timetable plus any extra courses/periods added for Level 1.
+    const extra = L ? buildLevelSchedule(1, { ...L, start: BASE_L1.term.start, end: BASE_L1.term.end }) : null;
+    SCHED = !extra ? BASE_L1 : {
+      term: BASE_L1.term,
+      courses: { ...BASE_L1.courses, ...extra.courses },
+      sessions: [...BASE_L1.sessions, ...extra.sessions].sort((a, b) => (a.date + (a.start || '')).localeCompare(b.date + (b.start || ''))),
+    };
+  } else SCHED = buildLevelSchedule(n, L);
+  byDate.clear();
+  byId.clear();
   for (const s of SCHED.sessions) {
-    s.src = 's';
     if (!byDate.has(s.date)) byDate.set(s.date, []);
     byDate.get(s.date).push(s);
     byId.set(s.id, s);
   }
+  for (const k of Object.keys(CUSTOM_COLORS)) delete CUSTOM_COLORS[k];
+  for (const k of Object.keys(COURSE_INSTR)) delete COURSE_INSTR[k];
+  for (const [lv, def] of Object.entries(data.levels || {}).sort((a, b) => (+a[0] === n) - (+b[0] === n))) {
+    for (const c of def.courses || []) {
+      CUSTOM_COLORS[c.code] = c.color || PALETTE[0];
+      COURSE_SHORT[c.code] = c.short || c.name;
+      if (+lv === n) COURSE_INSTR[c.code] = c.instructor ? [c.instructor] : [];
+    }
+  }
+  if (n === 1) for (const c of Object.keys(L1_SHORT)) { COURSE_SHORT[c] = L1_SHORT[c]; delete CUSTOM_COLORS[c]; }
+  if (n === 1) for (const c of L?.courses || []) COURSE_INSTR[c.code] = c.instructor ? [c.instructor] : [];
   for (const code of Object.keys(SCHED.courses)) {
+    if (n > 1 || !L1_SHORT[code]) continue;
     const ses = SCHED.sessions.filter((s) => s.code === code);
     const count = new Map();
-    for (const s of ses) for (const n of s.instructors || []) count.set(n, (count.get(n) || 0) + 1);
+    for (const s of ses) for (const nm of s.instructors || []) count.set(nm, (count.get(nm) || 0) + 1);
     // Skip people who only appear at a handful of special sessions.
-    COURSE_INSTR[code] = [...count].filter(([, n]) => n >= Math.max(1, ses.length * 0.2)).sort((a, b) => b[1] - a[1]).map(([n]) => n);
+    COURSE_INSTR[code] = [...count].filter(([, c]) => c >= Math.max(1, ses.length * 0.2)).sort((a, b) => b[1] - a[1]).map(([nm]) => nm);
   }
+  if (changedLevel) {
+    const today = D.today();
+    ui.cursor = D.parse(today < SCHED.term.start ? SCHED.term.start : today > SCHED.term.end ? SCHED.term.end : today);
+  }
+  return true;
 }
 
 /* ================================================================== */
 /* User data + sync                                                    */
 /* ================================================================== */
 const LS_KEY = 'l1s:data:v1';
-const DEFAULT_SETTINGS = { preGroup: 'A', radGroup: 'A2', others: 'hide', theme: 'auto', clock: '12', density: 'normal', hiddenCourses: [] };
+const DEFAULT_SETTINGS = { preGroup: 'A', radGroup: 'A2', others: 'hide', theme: 'auto', clock: '12', density: 'normal', hiddenCourses: [], currentLevel: 1, fun: true, completedCourses: [] };
 function blankData() {
-  return { version: 1, items: [], notes: [], sessionMeta: {}, deleted: {}, settings: { ...DEFAULT_SETTINGS }, settingsUpdatedAt: 0, updatedAt: 0, revision: 0 };
+  return { version: 1, items: [], notes: [], sessionMeta: {}, levels: {}, deleted: {}, settings: { ...DEFAULT_SETTINGS }, settingsUpdatedAt: 0, updatedAt: 0, revision: 0 };
 }
 let data = blankData();
 const sync = { cloud: false, backend: '', state: 'local', pending: false, inflight: false, lastError: '' };
@@ -146,6 +230,7 @@ function normalizeData(d) {
   out.notes = Array.isArray(out.notes) ? out.notes : [];
   out.sessionMeta = out.sessionMeta && typeof out.sessionMeta === 'object' ? out.sessionMeta : {};
   out.deleted = out.deleted && typeof out.deleted === 'object' ? out.deleted : {};
+  out.levels = out.levels && typeof out.levels === 'object' && !Array.isArray(out.levels) ? out.levels : {};
   return out;
 }
 function loadLocal() {
@@ -174,6 +259,9 @@ function mergeData(a, b) {
   const meta = { ...out.sessionMeta };
   for (const [k, v] of Object.entries(other.sessionMeta)) if (!meta[k] || (v.updatedAt || 0) > (meta[k].updatedAt || 0)) meta[k] = v;
   out.sessionMeta = meta;
+  const levels = { ...out.levels };
+  for (const [k, v] of Object.entries(other.levels)) if (!levels[k] || (v.updatedAt || 0) > (levels[k].updatedAt || 0)) levels[k] = v;
+  out.levels = levels;
   if ((other.settingsUpdatedAt || 0) > (out.settingsUpdatedAt || 0)) {
     out.settings = other.settings;
     out.settingsUpdatedAt = other.settingsUpdatedAt;
@@ -204,16 +292,16 @@ async function pullRemote() {
     if (j.backend) sync.backend = j.backend;
     if (j.error) throw new Error(j.error);
     if (j.cloud && j.data) {
-      const before = JSON.stringify([data.items, data.notes, data.sessionMeta, data.settings]);
+      const before = JSON.stringify([data.items, data.notes, data.sessionMeta, data.settings, data.levels]);
       const merged = mergeData(data, j.data);
       merged.revision = j.data.revision || 0;
-      const remoteSame = JSON.stringify([merged.items, merged.notes, merged.sessionMeta, merged.settings]) ===
-        JSON.stringify([j.data.items || [], j.data.notes || [], j.data.sessionMeta || {}, { ...DEFAULT_SETTINGS, ...(j.data.settings || {}) }]);
+      const remoteSame = JSON.stringify([merged.items, merged.notes, merged.sessionMeta, merged.settings, merged.levels]) ===
+        JSON.stringify([j.data.items || [], j.data.notes || [], j.data.sessionMeta || {}, { ...DEFAULT_SETTINGS, ...(j.data.settings || {}) }, j.data.levels || {}]);
       data = merged;
       saveLocal();
       if (!remoteSame) schedulePush();
       sync.lastError = '';
-      return before !== JSON.stringify([data.items, data.notes, data.sessionMeta, data.settings]);
+      return before !== JSON.stringify([data.items, data.notes, data.sessionMeta, data.settings, data.levels]);
     }
     if (j.cloud && !j.data && (data.items.length || data.notes.length || Object.keys(data.sessionMeta).length)) schedulePush();
     sync.lastError = '';
@@ -269,6 +357,16 @@ function commit({ rerender = true } = {}) {
 }
 
 function getMeta(id) { return data.sessionMeta[id] || {}; }
+// Tick-box shown on class blocks/rows so attendance can be checked without opening the class.
+const attendBox = (e) => (e.src === 's' && !isClosure(e) && e.start
+  ? `<span class="att-box ${getMeta(e.id).attended ? 'on' : ''}" role="checkbox" tabindex="0" aria-checked="${!!getMeta(e.id).attended}" data-attend="${esc(e.id)}" title="${getMeta(e.id).attended ? 'Attended — click to undo' : 'Mark attended'}"><span class="att-tick">✓</span><span class="att-lbl">Attended</span></span>`
+  : '');
+function toggleAttended(id) {
+  const on = !getMeta(id).attended;
+  setMeta(id, { attended: on });
+  commit();
+  if (on) toast('Marked attended ✓');
+}
 function setMeta(id, patch) {
   data.sessionMeta[id] = { ...getMeta(id), ...patch, updatedAt: Date.now() };
 }
@@ -306,22 +404,51 @@ function groupChip(s) {
   const rel = relevance(s);
   return `<span class="chip ${rel === 'mine' ? 'mine' : ''}" title="${rel === 'mine' ? 'Your group' : 'Another group'}">${esc(groupLabel(s))}</span>`;
 }
-function itemToEntry(it) {
+function itemToEntry(it, iso = it.date) {
   return {
-    src: 'i', id: it.id, date: it.date, start: it.start || null, end: it.end || null, allDay: !it.start,
+    src: 'i', id: it.id, occ: iso, date: iso, start: it.start || null, end: it.end || null, allDay: !it.start,
     code: it.course || null, title: it.title, mode: it.mode || (it.kind === 'event' ? 'unspecified' : 'none'),
-    kind: it.kind, done: !!it.done, item: it, rel: 'all',
+    kind: it.kind, done: !!it.done, item: it, rel: 'all', recurring: isRecurring(it),
   };
+}
+// data-open key: sessions by id; items by id plus the occurrence date (repeating events).
+const openKey = (e) => (e.src === 'i' ? `i:${e.id}|${e.occ || e.date}` : `s:${e.id}`);
+
+/* ---- Repeating events (Google Calendar-style rules) ---- */
+const isRecurring = (it) => !!it.recur && it.recur.freq && it.recur.freq !== 'none';
+function occursOn(it, iso) {
+  if (!isRecurring(it)) return it.date === iso;
+  if (!it.date || iso < it.date) return false;
+  const r = it.recur;
+  if (r.until && iso > r.until) return false;
+  if ((it.exdates || []).includes(iso)) return false;
+  const d0 = D.parse(it.date), d = D.parse(iso), n = Math.max(1, +r.interval || 1);
+  if (r.freq === 'daily') return D.diffDays(it.date, iso) % n === 0;
+  if (r.freq === 'weekdays') return d.getDay() >= 1 && d.getDay() <= 5;
+  if (r.freq === 'weekly') {
+    const days = r.byDay?.length ? r.byDay : [d0.getDay()];
+    return days.includes(d.getDay()) && Math.round((D.sow(d) - D.sow(d0)) / (7 * 864e5)) % n === 0;
+  }
+  if (r.freq === 'monthly') return d.getDate() === d0.getDate() && ((d.getFullYear() - d0.getFullYear()) * 12 + d.getMonth() - d0.getMonth()) % n === 0;
+  return false;
+}
+function recurText(it) {
+  if (!isRecurring(it)) return '';
+  const r = it.recur, n = +r.interval || 1;
+  const days = (r.byDay?.length ? r.byDay : [D.parse(it.date).getDay()]).slice().sort().map((d) => DAY3[d]).join(', ');
+  const base = { daily: n > 1 ? `Every ${n} days` : 'Daily', weekdays: 'Every weekday (Mon–Fri)',
+    weekly: `${n > 1 ? `Every ${n} weeks` : 'Weekly'} on ${days}`, monthly: `${n > 1 ? `Every ${n} months` : 'Monthly'} on day ${D.parse(it.date).getDate()}` }[r.freq];
+  return base + (r.until ? `, until ${fmtDate(r.until, { year: true })}` : '');
 }
 // Courses switched off in the sidebar are left out of the timetable views and printouts.
 const courseShown = (code) => !code || !(data.settings.hiddenCourses || []).includes(code);
 function sessionsOn(iso, { all = data.settings.others !== 'hide' } = {}) {
   return (byDate.get(iso) || []).filter((s) => (all || relevance(s) !== 'other') && courseShown(s.code));
 }
-function itemsOn(iso) { return data.items.filter((it) => it.date === iso && courseShown(it.course)); }
+function itemsOn(iso) { return data.items.filter((it) => courseShown(it.course) && occursOn(it, iso)); }
 function entriesOn(iso, opts) {
   const ses = sessionsOn(iso, opts).map((s) => ({ ...s, rel: relevance(s) }));
-  const its = itemsOn(iso).map(itemToEntry);
+  const its = itemsOn(iso).map((it) => itemToEntry(it, iso));
   return [...ses, ...its];
 }
 const isTimed = (e) => e.start && e.end && (e.src === 's' || e.kind === 'event' || e.kind === 'exam');
@@ -342,8 +469,14 @@ const modeLabel = (m) => (m === 'in-person' ? 'In person' : m === 'online' ? 'On
 const modeChip = (m) => (m === 'online' || m === 'in-person' ? `<span class="chip mode ${modeClass(m)}">${m === 'online' ? ICON.online : ICON.inperson}${modeLabel(m)}</span>` : '');
 const kindChip = (e) =>
   e.kind === 'exam' ? '<span class="chip exam">EXAM</span>' : e.kind === 'test' ? '<span class="chip test">TEST</span>' : '';
-const entryColor = (e) => (e.src === 'i' && !e.code ? 'var(--PERSONAL)' : courseColor(e.code));
-const entryTitle = (e) => (e.src === 's' && e.code && e.title === SCHED.courses[e.code] ? COURSE_SHORT[e.code] : e.title);
+// Categories for your own events (study blocks, prep, commutes…), each with an icon and a default colour.
+const EVENT_CATS = {
+  study: ['📚', 'Study', '#1971c2'], prep: ['📝', 'Prep', '#6741d9'], commute: ['🚌', 'Commute', '#868e96'], work: ['💼', 'Work', '#8d5524'],
+  exercise: ['🏃', 'Exercise', '#2f9e44'], appt: ['🩺', 'Appointment', '#d6336c'], social: ['🎉', 'Social', '#e8590c'], other: ['⭐', 'Other', '#1098ad'],
+};
+const catOf = (it) => (it?.cat && EVENT_CATS[it.cat] ? EVENT_CATS[it.cat] : null);
+const entryColor = (e) => (e.src === 'i' && !e.code ? e.item?.color || catOf(e.item)?.[2] || 'var(--PERSONAL)' : courseColor(e.code));
+const entryTitle = (e) => (e.src === 's' && e.code && e.title === SCHED.courses[e.code] ? COURSE_SHORT[e.code] : e.src === 'i' && catOf(e.item) ? `${catOf(e.item)[0]} ${e.title}` : e.title);
 function minutesOf(e) {
   return e.start && e.end ? D.mins(e.end) - D.mins(e.start) : 0;
 }
@@ -380,7 +513,18 @@ function renderHeader() {
   const t = SCHED.term;
   const level = t.level || 1, levels = t.levels || 4;
   document.title = `${t.program} — Level ${level}`;
-  $('#levels').innerHTML = [...Array(levels)].map((_, i) => `<i class="${i + 1 === level ? 'on' : i + 1 < level ? 'done' : ''}" title="Level ${i + 1}${i + 1 === level ? ' (this term)' : i + 1 > level ? ' — timetable not added yet' : ''}">${i + 1}</i>`).join('');
+  $('#levels').innerHTML = [...Array(levels)].map((_, i) => {
+    const n = i + 1, ok = levelAvailable(n);
+    return `<button type="button" class="lv ${n === level ? 'on' : ok ? 'done' : ''}" ${ok && n !== level ? `data-level="${n}"` : 'tabindex="-1"'}
+      title="Level ${n}${n === level ? ' (viewing)' : ok ? ' — click to view' : ' — not set up yet (use LEVEL UP!)'}">${n}</button>`;
+  }).join('');
+  const prog = levelProgress(), btn = $('#levelup-btn');
+  btn.classList.toggle('hidden', level >= MAX_LEVEL);
+  btn.classList.toggle('locked', prog.remaining.length > 0);
+  btn.classList.toggle('ready', !prog.remaining.length);
+  $('#levelup-ico').textContent = prog.remaining.length ? '🔒' : '★';
+  $('#levelup-count').textContent = prog.remaining.length ? `${prog.total - prog.remaining.length}/${prog.total}` : '';
+  btn.title = prog.remaining.length ? `Locked: finish your Level ${level} courses to unlock (${prog.remaining.length} left)` : `Go to Level ${level + 1}!`;
   $('#term-sub').textContent = `Level ${level} of ${levels} · ${fmtDate(t.start, { year: true }).replace(/^\w+, /, '')} – ${fmtDate(t.end, { year: true }).replace(/^\w+, /, '')}`;
   const start = D.sow(D.parse(t.start)), end = D.parse(t.end);
   const totalWeeks = Math.ceil((D.add(end, 1) - start) / (7 * 864e5));
@@ -400,6 +544,7 @@ function renderHeader() {
 }
 
 function render() {
+  if (BASE_L1) ensureLevel();
   applyTheme();
   renderHeader();
   const v = $('#view');
@@ -469,7 +614,7 @@ function weekSummary(days) {
       if (s.kind === 'exam' || s.kind === 'test') exams++;
     }
   }
-  const due = data.items.filter((i) => days.includes(i.date) && i.kind !== 'event' && !i.done).length;
+  const due = days.reduce((a, iso) => a + itemsOn(iso).filter((i) => i.kind !== 'event' && !i.done).length, 0);
   const h = (m) => `${+(m / 60).toFixed(1)} h`;
   return `<span class="muted small">${h(campus)} on campus · ${h(online)} online${exams ? ` · <b style="color:var(--danger)">${exams} exam/test</b>` : ''}${due ? ` · ${due} due` : ''}</span>`;
 }
@@ -502,10 +647,10 @@ function evBlockHTML(e, top, height) {
   const meta = e.src === 's' ? getMeta(e.id) : {};
   const note = ((e.src === 's' ? meta.note : e.item?.notes) || '').trim();
   const cls = ['ev', modeClass(e.mode), e.rel === 'other' ? 'other' : '', e.kind === 'exam' || e.kind === 'test' ? e.kind : '',
-    e.src === 'i' ? 'personal' : '', meta.attended ? 'done-check' : ''].join(' ');
+    e.src === 'i' ? 'personal' : '', meta.attended ? 'attended' : ''].join(' ');
   const w = 100 / (e._lanes || 1), l = (e._lane || 0) * w;
   const mid = height >= 34;
-  const code = e.code ? codeLabel(e.code) : e.src === 'i' ? 'Personal' : '';
+  const code = e.code ? codeLabel(e.code) : e.src === 'i' ? esc(catOf(e.item)?.[1] || 'Personal') : '';
   const icon = e.mode === 'online' ? ICON.online : e.mode === 'in-person' ? ICON.inperson : '';
   const label = `${code} ${entryTitle(e)}, ${fmtRange(e.start, e.end)}, ${modeLabel(e.mode)} ${e.group ? groupLabel(e) : ''}`;
   // Fill the remaining height: group chip, then the detail line (wrapped), then the class notes.
@@ -516,7 +661,8 @@ function evBlockHTML(e, top, height) {
   const detailLines = detail ? Math.max(0, Math.min(note ? 2 : 4, Math.floor((room - 2) / 12))) : 0;
   room -= detailLines ? detailLines * 12 + 2 : 0;
   const noteLines = note ? Math.floor(room / 12) : 0;
-  return `<button class="${cls}" data-open="${e.src}:${esc(e.id)}" aria-label="${esc(label)}${note ? '. Notes: ' + esc(note.slice(0, 200)) : ''}"
+  const draggable = e.src === 'i' && isTimed(e);
+  return `<button class="${cls}" data-open="${esc(openKey(e))}" ${draggable ? 'data-drag="1"' : ''} aria-label="${esc(label)}${note ? '. Notes: ' + esc(note.slice(0, 200)) : ''}"
       title="${note ? esc(note.slice(0, 400)) : ''}"
       style="--c:${entryColor(e)};top:${top}px;height:${height - 2}px;left:calc(${l}% + 2px);width:calc(${w}% - 4px)">
     <div class="t1">${code ? `<span class="code">${code}</span>` : ''}${icon}${kindChip(e)}${note && noteLines < 1 ? `<span class="note-ico">${ICON.note}</span>` : ''}</div>
@@ -525,6 +671,7 @@ function evBlockHTML(e, top, height) {
     ${chips ? `<div class="chips">${groupChip(e)}</div>` : ''}
     ${detailLines ? `<div class="ev-detail" style="-webkit-line-clamp:${detailLines}">${esc(detail)}</div>` : ''}
     ${noteLines >= 1 ? `<div class="ev-note" style="-webkit-line-clamp:${noteLines}">${ICON.note} ${esc(note)}</div>` : ''}
+    ${e.recurring ? '<span class="ev-rep" title="Repeating event">🔁</span>' : ''}${draggable ? '<span class="ev-resize" aria-hidden="true"></span>' : ''}${height >= 30 ? attendBox(e) : ''}
   </button>`;
 }
 
@@ -532,7 +679,7 @@ function pillHTML(e) {
   if (isClosure(e)) return `<div class="pill closure" title="${esc(e.title)}"><span class="tx">${esc(e.title)}</span></div>`;
   const it = e.item;
   const kindLbl = { assignment: 'Due', exam: 'Exam', reminder: '', event: '' }[it.kind] || '';
-  return `<button class="pill ${it.done ? 'done' : ''} ${it.kind}" data-open="i:${esc(it.id)}" style="--c:${entryColor(e)}" title="${esc(it.title)}">
+  return `<button class="pill ${it.done ? 'done' : ''} ${it.kind}" data-open="${esc(openKey(e))}" style="--c:${entryColor(e)}" title="${esc(it.title)}">
     <span class="box"></span><span class="tx">${kindLbl ? `<b>${kindLbl}:</b> ` : ''}${it.start ? itemTime(it) + ' ' : ''}${esc(it.title)}</span></button>`;
 }
 
@@ -606,23 +753,182 @@ function renderWeek(v) {
       <div class="wk-allday"><div class="lbl">Due / all day</div>${allday}</div>
       <div class="wk-body" style="height:${px(hi) + PAD}px;--pad:${PAD}px"><div class="wk-times">${times}</div>${colsHTML}</div>
     </div></div>
+    <div class="muted small grid-hint">Tip: drag on an empty part of the grid to add an event · drag your own events to move them, or their bottom edge to change the length.</div>
     `);
+  bindWeekGrid(v, { lo, hi, slot, PAD });
+}
+
+/* ---- Google Calendar-style grid interactions ---- */
+let suppressClickUntil = 0;
+function bindWeekGrid(root, g) {
+  const body = $('.wk-body', root);
+  if (!body) return;
+  const px = (m) => g.PAD + ((m - g.lo) / 30) * g.slot;
+  const snap = (m) => Math.round(m / 15) * 15;
+  const yToMin = (col, y) => clamp(snap(g.lo + ((y - col.getBoundingClientRect().top - g.PAD) / g.slot) * 30), g.lo, g.hi);
+  const colAt = (x, y) => document.elementsFromPoint(x, y).find((el) => el.classList?.contains('wk-col'));
+
+  body.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || e.pointerType === 'touch') return; // touch: tap handled by click below
+    const evEl = e.target.closest('.ev');
+    if (evEl) { if (evEl.dataset.drag) dragEvent(e, evEl, !!e.target.closest('.ev-resize')); return; }
+    const col = e.target.closest('.wk-col');
+    if (col) dragCreate(e, col);
+  });
+  body.addEventListener('click', (e) => {
+    if (e.pointerType !== 'touch' && !(e.detail === 0 || e.sourceCapabilities?.firesTouchEvents)) return;
+    const col = e.target.closest('.wk-col');
+    if (!col || e.target.closest('.ev')) return;
+    const m = yToMin(col, e.clientY);
+    const start = Math.min(m, g.hi - 60);
+    quickCreate({ date: col.dataset.day, start, end: start + 60, col, px });
+  });
+
+  function dragCreate(e, col) {
+    e.preventDefault();
+    const m0 = yToMin(col, e.clientY);
+    const ghost = document.createElement('div');
+    ghost.className = 'ev-ghost';
+    col.appendChild(ghost);
+    let a = m0, b = m0 + 30, moved = false;
+    const draw = () => { ghost.style.top = px(a) + 'px'; ghost.style.height = Math.max(8, px(b) - px(a) - 2) + 'px'; ghost.textContent = fmtRange(D.hm(a), D.hm(b)); };
+    draw();
+    const move = (ev) => {
+      const m = yToMin(col, ev.clientY);
+      if (Math.abs(ev.clientY - e.clientY) > 4) moved = true;
+      a = Math.min(m0, m); b = Math.max(m0, m);
+      if (b - a < 15) b = a + 15;
+      draw();
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      if (!moved) { a = m0; b = Math.min(m0 + 60, 24 * 60 - 1); draw(); }
+      quickCreate({ date: col.dataset.day, start: a, end: b, ghost, col, px });
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }
+
+  function dragEvent(e, el, resize) {
+    const [id, occ] = el.dataset.open.slice(2).split('|');
+    const it = data.items.find((i) => i.id === id);
+    if (!it || !it.start || !it.end) return;
+    e.preventDefault();
+    const s0 = D.mins(it.start), e0 = D.mins(it.end), dur = e0 - s0;
+    let col = el.closest('.wk-col'), ns = s0, ne = e0, moved = false;
+    const startY = e.clientY, startX = e.clientX;
+    const move = (ev) => {
+      if (!moved && Math.hypot(ev.clientX - startX, ev.clientY - startY) < 5) return;
+      if (!moved) { moved = true; el.classList.add('dragging'); el.style.left = '2px'; el.style.width = 'calc(100% - 4px)'; }
+      const delta = snap(((ev.clientY - startY) / g.slot) * 30);
+      if (resize) {
+        ne = clamp(e0 + delta, s0 + 15, 24 * 60 - 1);
+      } else {
+        ns = clamp(s0 + delta, 0, 24 * 60 - 1 - dur);
+        ne = ns + dur;
+        const over = colAt(ev.clientX, ev.clientY);
+        if (over && over !== col) { col = over; col.appendChild(el); }
+      }
+      el.style.top = px(ns) + 'px';
+      el.style.height = Math.max(10, px(ne) - px(ns) - 2) + 'px';
+      const t3 = el.querySelector('.t3');
+      if (t3) t3.textContent = fmtRange(D.hm(ns), D.hm(ne));
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      if (!moved) return; // plain click: opens the editor
+      suppressClickUntil = Date.now() + 400;
+      const date = col.dataset.day;
+      if (date === occ && ns === s0 && ne === e0) return render();
+      moveItem(it, occ, date, D.hm(ns), D.hm(ne));
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }
+}
+
+// Small "quick add" card next to the new slot, like Google Calendar's.
+function quickCreate({ date, start, end, ghost, col, px }) {
+  $('.qc-pop')?.remove();
+  if (!ghost) {
+    ghost = document.createElement('div');
+    ghost.className = 'ev-ghost';
+    col.appendChild(ghost);
+    ghost.style.top = px(start) + 'px';
+    ghost.style.height = px(end) - px(start) - 2 + 'px';
+    ghost.textContent = fmtRange(D.hm(start), D.hm(end));
+  }
+  let kind = 'event', cat = '';
+  const pop = document.createElement('div');
+  pop.className = 'qc-pop card';
+  pop.setAttribute('role', 'dialog');
+  pop.innerHTML = `<input type="text" class="qc-title" placeholder="Add title" aria-label="Title">
+    <div class="seg qc-kind" role="group">${[['event', 'Event'], ['assignment', 'Due date'], ['reminder', 'Reminder']].map(([k, n]) => `<button type="button" data-qk="${k}" aria-pressed="${k === kind}">${n}</button>`).join('')}</div>
+    <div class="qc-cats" role="group" aria-label="Category">${Object.entries(EVENT_CATS).map(([k, [ic, nm, c]]) => `<button type="button" class="qc-cat" data-qcat="${k}" style="--c:${c}" title="${nm}" aria-pressed="false">${ic} ${nm}</button>`).join('')}</div>
+    <div class="qc-when">${fmtDate(date, { long: true })} · <span class="qc-time">${fmtRange(D.hm(start), D.hm(end))}</span></div>
+    <select class="qc-course" aria-label="Course">${courseOptions(null)}</select>
+    <div class="qc-acts"><button type="button" class="btn sm" data-qa="more">More options</button><button type="button" class="btn primary sm" data-qa="save">Save</button></div>`;
+  document.body.appendChild(pop);
+  const r = ghost.getBoundingClientRect(), w = 290;
+  const left = r.right + 10 + w < innerWidth ? r.right + 10 : Math.max(8, r.left - w - 10);
+  pop.style.left = left + 'px';
+  pop.style.top = clamp(r.top, 8, innerHeight - pop.offsetHeight - 8) + 'px';
+  const title = $('.qc-title', pop);
+  title.focus();
+  const close = () => { pop.remove(); ghost.remove(); document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', onKey, true); };
+  const outside = (e) => { if (!pop.contains(e.target)) close(); };
+  const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+  setTimeout(() => document.addEventListener('pointerdown', outside, true), 0);
+  document.addEventListener('keydown', onKey, true);
+  const fields = () => ({
+    kind, cat: kind === 'event' ? cat : '', title: title.value.trim() || (kind === 'event' && cat ? EVENT_CATS[cat][1] : ''), course: $('.qc-course', pop).value || null, date,
+    start: D.hm(start), end: kind === 'event' ? D.hm(end) : '',
+  });
+  $$('[data-qk]', pop).forEach((b) => (b.onclick = () => {
+    kind = b.dataset.qk;
+    $$('[data-qk]', pop).forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    $('.qc-time', pop).textContent = kind === 'event' ? fmtRange(D.hm(start), D.hm(end)) : (kind === 'assignment' ? 'due ' : '') + fmtTime(D.hm(start));
+    $('.qc-cats', pop).classList.toggle('hidden', kind !== 'event');
+    title.focus();
+  }));
+  $$('[data-qcat]', pop).forEach((b) => (b.onclick = () => {
+    cat = cat === b.dataset.qcat ? '' : b.dataset.qcat;
+    $$('[data-qcat]', pop).forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.qcat === cat)));
+    title.placeholder = cat ? EVENT_CATS[cat][1] + ' (or type a title)' : 'Add title';
+    ghost.style.setProperty('--accent', cat ? EVENT_CATS[cat][2] : '');
+    title.focus();
+  }));
+  const save = () => {
+    const f = fields();
+    if (!f.title) { title.focus(); toast('Add a title or pick a category'); return; }
+    close();
+    const it = { id: uid('t'), ...f, mode: '', priority: 'normal', notes: '', subtasks: [], attachments: [], done: false, createdAt: Date.now(), location: '', color: '', recur: null, exdates: [] };
+    setStatus(it, 'not-started');
+    upsert('items', it);
+    commit();
+    toast(`${kindName(kind)} added`);
+  };
+  $('[data-qa="save"]', pop).onclick = save;
+  title.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } });
+  $('[data-qa="more"]', pop).onclick = () => { const f = fields(); close(); openItemEditor(f); };
 }
 
 function rowEvHTML(e) {
   if (isClosure(e)) return `<div class="row-ev none" style="--c:var(--PROGRAM)"><div class="tm">All day</div><div class="ti muted">${esc(e.title)}</div></div>`;
   if (e.src === 'i' && !isTimed(e)) {
     const it = e.item;
-    return `<div class="row-ev none" data-open="i:${esc(it.id)}" style="--c:${entryColor(e)}">
+    return `<div class="row-ev none" data-open="${esc(openKey(e))}" style="--c:${entryColor(e)}">
       <div class="tm">${it.start ? itemTime(it) : it.kind === 'assignment' ? 'Due' : 'All day'}</div>
       <div><div class="ti" style="${it.done ? 'text-decoration:line-through;color:var(--muted)' : ''}">${esc(it.title)}</div>
       <div class="meta">${it.course ? `<span class="chip crs" style="--c:${entryColor(e)}">${codeLabel(it.course)}</span>` : ''}<span>${esc(kindName(it.kind))}</span>${it.done ? '<span>✓ done</span>' : ''}</div></div></div>`;
   }
   const meta = e.src === 's' ? getMeta(e.id) : {};
-  return `<div class="row-ev ${modeClass(e.mode)} ${e.rel === 'other' ? 'other' : ''}" data-open="${e.src}:${esc(e.id)}" style="--c:${entryColor(e)}">
+  return `<div class="row-ev ${modeClass(e.mode)} ${e.rel === 'other' ? 'other' : ''} ${e.src === 's' ? 'has-att' : ''}" data-open="${esc(openKey(e))}" style="--c:${entryColor(e)}">${attendBox(e)}
     <div class="tm">${fmtRange(e.start, e.end)}</div>
     <div><div class="ti">${e.code ? `<span style="color:${entryColor(e)}">${codeLabel(e.code)}</span> ` : ''}${esc(entryTitle(e))}</div>
-    <div class="meta">${modeChip(e.mode)}${kindChip(e)}${groupChip(e)}${e.detail ? `<span>${esc(e.detail)}</span>` : ''}${meta.attended ? '<span style="color:var(--ok)">✓ attended</span>' : ''}</div>
+    <div class="meta">${modeChip(e.mode)}${kindChip(e)}${groupChip(e)}${e.detail ? `<span>${esc(e.detail)}</span>` : ''}</div>
     ${meta.note ? `<div class="row-note">${ICON.note} ${esc(meta.note)}</div>` : ''}</div>
   </div>`;
 }
@@ -664,7 +970,7 @@ function renderMonth(v) {
         <span class="tm">${fmtTime(e.start, false)}</span> <b>${e.code ? codeLabel(e.code).replace('DH ', '') : '•'}</b> <span class="tx">${esc(e.kind === 'exam' ? 'EXAM ' : e.kind === 'test' ? 'TEST ' : '')}${esc(entryTitle(e))}</span></div>`;
     }).join('');
     cells += `<div class="md ${d.getMonth() !== first.getMonth() ? 'out' : ''} ${iso === today ? 'today' : ''} ${closed ? 'closed' : ''}" data-goto="${iso}" title="Open week">
-      <div class="top"><span class="num">${d.getDate()}</span>${tag ? `<span class="daytag"><span class="chip ${tag.cls}">${tag.label}</span></span>` : ''}</div>
+      <div class="top"><span class="num">${d.getDate()}</span><button type="button" class="md-add" data-add-date="${iso}" title="Add an event on ${esc(fmtDate(iso))}" aria-label="Add event">+</button>${tag ? `<span class="daytag"><span class="chip ${tag.cls}">${tag.label}</span></span>` : ''}</div>
       ${closed ? `<div class="mini muted"><span class="tx"><i>${esc(closed.title)}</i></span></div>` : ''}${minis}
       ${shown.length > max ? `<div class="mini more">+${shown.length - max} more</div>` : ''}
     </div>`;
@@ -982,6 +1288,33 @@ function newNote(course = '', title = '') {
 /* ================================================================== */
 /* Courses view                                                        */
 /* ================================================================== */
+/* ---- Course completion gates LEVEL UP! ---- */
+const doneKey = (code) => `${currentLevel()}:${code}`;
+function courseStatus(code) {
+  const manual = (data.settings.completedCourses || []).includes(doneKey(code));
+  const ses = SCHED.sessions.filter((s) => s.code === code && !isClosure(s));
+  const last = ses[ses.length - 1];
+  const today = D.today();
+  const ended = !!last && (last.date < today || (last.date === today && D.mins(last.end || '23:59') <= D.nowMin()));
+  return { done: manual || ended, manual, ended, last };
+}
+function levelProgress() {
+  const codes = Object.keys(SCHED.courses || {});
+  return { total: codes.length, remaining: codes.filter((c) => !courseStatus(c).done) };
+}
+function setCourseDone(code, on) {
+  const set = new Set(data.settings.completedCourses || []);
+  if (on) set.add(doneKey(code)); else set.delete(doneKey(code));
+  const before = levelProgress().remaining.length;
+  data.settings.completedCourses = [...set];
+  data.settingsUpdatedAt = Date.now();
+  commit();
+  if (before && !levelProgress().remaining.length && currentLevel() < MAX_LEVEL) {
+    celebrate();
+    toast(`All Level ${currentLevel()} courses done — LEVEL UP! is unlocked ★`);
+  }
+}
+
 function renderCourses(v) {
   const today = D.today(), now = D.nowMin();
   const cards = Object.entries(SCHED.courses).map(([code, name]) => {
@@ -1005,8 +1338,9 @@ function renderCourses(v) {
     ].map(([g, w]) => [gradePct(g), parseFloat(w)]).filter(([g]) => g != null);
     const wSum = graded.reduce((a, [, w]) => a + (w > 0 ? w : 0), 0);
     const avg = graded.length ? (wSum ? graded.reduce((a, [g, w]) => a + (w > 0 ? g * w : 0), 0) / wSum : graded.reduce((a, [g]) => a + g, 0) / graded.length) : null;
-    return `<div class="card course" style="--c:${courseColor(code)}">
-      <div class="code">${codeLabel(code)}</div><h3>${esc(name)}</h3>
+    const cs = courseStatus(code);
+    return `<div class="card course ${cs.done ? 'is-done' : ''}" style="--c:${courseColor(code)}">
+      <div class="code">${codeLabel(code)}${cs.done ? ` <span class="done-badge">✓ ${cs.ended && !cs.manual ? 'Finished' : 'Completed'}</span>` : ''}</div><h3>${esc(name)}</h3>
       <dl class="kv">
         <dt>Instructor${instr.length > 1 ? 's' : ''}</dt><dd>${esc(instr.join(', ') || '—')}</dd>
         <dt>Format</dt><dd>${inp ? `${ICON.inperson} ${inp} in person` : ''}${inp && online ? ' · ' : ''}${online ? `${ICON.online} ${online} online` : ''}</dd>
@@ -1022,15 +1356,20 @@ function renderCourses(v) {
         <button class="btn sm" data-course-notes="${code}">Notes${notes ? ` (${notes})` : ''}</button>
         <button class="btn sm" data-course-agenda="${code}">Sessions</button>
         <button class="btn sm" data-course-new="${code}">${ICON.plus}Add due date</button>
+        ${cs.ended ? '' : `<button class="btn sm ${cs.manual ? '' : 'ghost-ok'}" data-course-done="${esc(code)}" data-on="${cs.manual ? 0 : 1}">${cs.manual ? 'Mark not complete' : '✓ Mark course complete'}</button>`}
       </div>
     </div>`;
   }).join('');
-  v.innerHTML = `<div class="toolbar"><h2>Courses</h2><span class="muted small">Counts reflect your groups (Pre-clinic ${esc(data.settings.preGroup)}, Rad lab ${esc(data.settings.radGroup)}). Tick “Attended” on a class to track attendance.</span></div>
+  const lp = levelProgress();
+  v.innerHTML = `<div class="toolbar"><h2>Courses</h2><span class="chip ${lp.remaining.length ? '' : 'mine'}">${lp.total - lp.remaining.length}/${lp.total} complete</span>
+    <button class="btn sm" id="cr-setup">${ICON.plus} Add courses & class periods</button><span class="muted small">Counts reflect your groups (Pre-clinic ${esc(data.settings.preGroup)}, Rad lab ${esc(data.settings.radGroup)}). Tick “Attended” on a class to track attendance.</span></div>
     <div class="course-grid">${cards}</div>`;
   $$('[data-course-tasks]', v).forEach((b) => (b.onclick = () => { ui.taskCourse = b.dataset.courseTasks; ui.taskFilter = 'all'; setView('tasks'); }));
   $$('[data-course-notes]', v).forEach((b) => (b.onclick = () => { ui.noteCourse = b.dataset.courseNotes; ui.noteActive = null; setView('notes'); }));
   $$('[data-course-agenda]', v).forEach((b) => (b.onclick = () => { ui.agendaCourse = b.dataset.courseAgenda; setView('agenda'); }));
   $$('[data-course-new]', v).forEach((b) => (b.onclick = () => openItemEditor({ course: b.dataset.courseNew, kind: 'assignment' })));
+  $('#cr-setup').onclick = () => openLevelWizard(currentLevel(), { step: 1 });
+  $$('[data-course-done]', v).forEach((b) => (b.onclick = () => setCourseDone(b.dataset.courseDone, b.dataset.on === '1')));
 }
 
 /* ================================================================== */
@@ -1092,6 +1431,7 @@ function openSession(id) {
     </div>
     <footer>
       <span class="left muted small" id="ses-saved"></span>
+      ${s.periodId ? `<button class="btn" id="ses-period">Edit class periods</button>` : ''}
       ${s.code ? `<button class="btn" id="ses-cnote">${ICON.note} Course notes</button>` : ''}
       <button class="btn" id="ses-add">${ICON.plus} Add assignment / due date</button>
       <button class="btn primary" data-close>Done</button>
@@ -1101,6 +1441,7 @@ function openSession(id) {
   $$('[data-m]', modal).forEach((cb) => (cb.onchange = () => { setMeta(id, { [cb.dataset.m]: cb.checked }); commit({ rerender: false }); changed = true; }));
   $$('[data-toggle]', modal).forEach((cb) => (cb.onchange = () => { changed = true; toggleItem(cb.dataset.toggle, cb.checked); }));
   $('#ses-add').onclick = () => openItemEditor({ course: s.code || null, date: s.date, kind: 'assignment' });
+  if (s.periodId) $('#ses-period').onclick = () => openLevelWizard(s.level, { step: 2 });
   if (s.code) $('#ses-cnote').onclick = () => { closeModal(); ui.noteCourse = s.code; ui.noteActive = null; ui.noteMode = 'notes'; setView('notes'); };
 }
 
@@ -1117,18 +1458,92 @@ function toggleItem(id, done) {
 }
 
 /* ---- Item editor (assignments, due dates, events, exams, reminders) ---- */
+// Ask how far an edit/delete of one occurrence of a repeating event should reach.
+function chooseScope(title, { allowFollowing = true } = {}) {
+  return new Promise((resolve) => {
+    const el = document.createElement('div');
+    el.className = 'modal-backdrop scope-backdrop';
+    el.innerHTML = `<div class="modal scope" role="dialog" aria-modal="true"><div class="body">
+      <h2 style="margin:0;font-size:16px">${esc(title)}</h2>
+      <label class="check"><input type="radio" name="scope" value="one" checked> This event</label>
+      ${allowFollowing ? '<label class="check"><input type="radio" name="scope" value="following"> This and following events</label>' : ''}
+      <label class="check"><input type="radio" name="scope" value="all"> All events</label></div>
+      <footer><button class="btn" data-sc="cancel">Cancel</button><button class="btn primary" data-sc="ok">OK</button></footer></div>`;
+    document.body.appendChild(el);
+    const done = (v) => { el.remove(); document.removeEventListener('keydown', onKey, true); resolve(v); };
+    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); done(null); } };
+    document.addEventListener('keydown', onKey, true);
+    el.querySelector('[data-sc="cancel"]').onclick = () => done(null);
+    el.querySelector('[data-sc="ok"]').onclick = () => done(el.querySelector('input[name=scope]:checked').value);
+    el.addEventListener('mousedown', (e) => { if (e.target === el) done(null); });
+    el.querySelector('[data-sc="ok"]').focus();
+  });
+}
+const dayBefore = (iso) => D.iso(D.add(D.parse(iso), -1));
+const shiftIso = (iso, n) => D.iso(D.add(D.parse(iso), n));
+// Apply an edit made to one occurrence (`occ`) of repeating item `orig` (edited copy: `ed`, with ed.date = new date).
+function applySeriesEdit(orig, ed, occ, scope) {
+  if (scope === 'following' && occ === orig.date) scope = 'all';
+  if (scope === 'all') {
+    const delta = D.diffDays(occ, ed.date);
+    ed.date = shiftIso(orig.date, delta);
+    ed.exdates = (orig.exdates || []).map((d) => shiftIso(d, delta));
+    if (ed.recur?.until && delta) ed.recur = { ...ed.recur, until: shiftIso(ed.recur.until, delta) };
+    upsert('items', ed);
+    return;
+  }
+  const head = structuredClone(orig);
+  if (scope === 'one') head.exdates = [...new Set([...(orig.exdates || []), occ])];
+  else head.recur = { ...orig.recur, until: dayBefore(occ) };
+  upsert('items', head);
+  const copy = { ...structuredClone(ed), id: uid('t'), createdAt: Date.now() };
+  if (scope === 'one') { copy.recur = null; copy.exdates = []; }
+  else copy.exdates = (orig.exdates || []).filter((d) => d > occ);
+  upsert('items', copy);
+}
+function deleteItemFiles(it) {
+  const used = new Set(data.items.filter((x) => x.id !== it.id).flatMap((x) => (x.attachments || []).map((f) => f.id)));
+  for (const f of it.attachments || []) if (f.cloud && !used.has(f.id)) fetch(`/api/files?id=${encodeURIComponent(f.id)}`, { method: 'DELETE' }).catch(() => {});
+}
+async function deleteItem(it, occ) {
+  if (isRecurring(it) && occ) {
+    const scope = await chooseScope('Delete repeating event');
+    if (!scope) return false;
+    if (scope === 'one') { upsert('items', { ...it, exdates: [...new Set([...(it.exdates || []), occ])] }); return true; }
+    if (scope === 'following' && occ !== it.date) { upsert('items', { ...it, recur: { ...it.recur, until: dayBefore(occ) } }); return true; }
+  } else if (!confirm('Delete this item?')) return false;
+  deleteItemFiles(it);
+  remove('items', it.id);
+  return true;
+}
+// Move/resize from the week grid.
+async function moveItem(it, occ, date, start, end) {
+  const ed = { ...structuredClone(it), date, start, end };
+  if (isRecurring(it)) {
+    const scope = await chooseScope('Move repeating event');
+    if (!scope) return render();
+    applySeriesEdit(it, ed, occ, scope);
+  } else upsert('items', ed);
+  commit();
+}
+
+const EVENT_COLORS = ['', '#1098ad', '#e8590c', '#2f9e44', '#6741d9', '#d6336c', '#b08900', '#495057'];
 const MAX_LOCAL_FILE = 1_000_000, MAX_CLOUD_FILE = 2_500_000;
-function openItemEditor(seed = {}) {
+function openItemEditor(seed = {}, { occ = null } = {}) {
   const existing = seed.id && data.items.find((i) => i.id === seed.id);
   const it = existing ? structuredClone(existing) : {
     id: uid('t'), kind: seed.kind || 'assignment', title: seed.title || '', course: seed.course || null,
     date: seed.date || D.today(), start: seed.start || '', end: seed.end || '', mode: seed.mode || '', priority: 'normal',
-    notes: '', subtasks: [], attachments: [], done: false, createdAt: Date.now(),
+    notes: '', subtasks: [], attachments: [], done: false, createdAt: Date.now(), location: '', color: '', recur: null, exdates: [],
   };
   it.subtasks ||= [];
   it.attachments ||= [];
+  const recurring = existing && isRecurring(existing);
+  if (!recurring) occ = null;
+  const shownDate = occ || it.date;
+  const r = it.recur || { freq: 'none', interval: 1, byDay: [], until: '' };
   const modal = openModal(`
-    ${modalHead(existing ? 'Edit' : 'New', 'Assignments, due dates, events, exams and reminders show up on the timetable.')}
+    ${modalHead(existing ? 'Edit' : 'New', recurring ? `🔁 ${esc(recurText(existing))}` : 'Assignments, due dates, events, exams and reminders show up on the timetable.')}
     <form class="body" id="it-form" autocomplete="off">
       <div class="seg" role="group" aria-label="Type" style="justify-self:start">${Object.keys(KINDS).map((k) => `<button type="button" data-kind="${k}" aria-pressed="${it.kind === k}">${kindName(k)}</button>`).join('')}</div>
       <label class="field">Title<input type="text" id="it-title" required value="${esc(it.title)}" placeholder="e.g. Case study write-up" autofocus></label>
@@ -1136,13 +1551,29 @@ function openItemEditor(seed = {}) {
         <label class="field">Course<select id="it-course">${courseOptions(it.course)}</select></label>
         <label class="field">Priority<select id="it-prio"><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option></select></label>
       </div>
+      <div class="field" id="it-cat-wrap"><span class="form-label">Category</span><div class="qc-cats">${Object.entries(EVENT_CATS).map(([k, [ic, nm, c]]) => `<button type="button" class="qc-cat" data-ecat="${k}" style="--c:${c}" aria-pressed="${it.cat === k}">${ic} ${nm}</button>`).join('')}</div></div>
+      <div class="field hidden" id="it-color-wrap"><span class="form-label">Colour</span><div class="swatches">${EVENT_COLORS.map((c) => `<button type="button" class="sw-btn ${c === (it.color || '') ? 'on' : ''}" data-color="${c}" style="--c:${c || 'var(--PERSONAL)'}" aria-label="${c ? 'Colour ' + c : 'Default colour'}"></button>`).join('')}</div></div>
       <div class="grid-3">
-        <label class="field"><span id="it-date-lbl">Date</span><input type="date" id="it-date" value="${esc(it.date || '')}"></label>
-        <label class="field"><span id="it-start-lbl">Time (optional)</span><input type="time" id="it-start" value="${esc(it.start || '')}"></label>
+        <label class="field"><span id="it-date-lbl">Date</span><input type="date" id="it-date" value="${esc(shownDate || '')}"></label>
+        <label class="field" id="it-start-wrap"><span id="it-start-lbl">Time (optional)</span><input type="time" id="it-start" value="${esc(it.start || '')}"></label>
         <label class="field" id="it-end-wrap"><span id="it-end-lbl">End time</span><input type="time" id="it-end" value="${esc(it.end || '')}"></label>
       </div>
-      <label class="check small" id="it-frame-wrap"><input type="checkbox" id="it-frame" ${it.end && it.kind !== 'event' && it.kind !== 'exam' ? 'checked' : ''}> Make it a time frame (from – to) instead of a single time</label>
-      <label class="field" id="it-mode-wrap">Where<select id="it-mode"><option value="">Not specified</option><option value="in-person">In person</option><option value="online">Online</option></select></label>
+      <div class="inline-checks">
+        <label class="check small" id="it-allday-wrap"><input type="checkbox" id="it-allday" ${(it.kind === 'event' || it.kind === 'reminder') && existing && !it.start ? 'checked' : ''}> All day</label>
+        <label class="check small" id="it-frame-wrap"><input type="checkbox" id="it-frame" ${it.end && it.kind !== 'event' && it.kind !== 'exam' ? 'checked' : ''}> Make it a time frame (from – to) instead of a single time</label>
+      </div>
+      <div class="repeat-box" id="it-repeat-wrap">
+        <label class="field">Repeat<select id="it-freq">
+          <option value="none">Does not repeat</option><option value="daily">Daily</option><option value="weekdays">Every weekday (Mon–Fri)</option>
+          <option value="weekly">Weekly</option><option value="monthly">Monthly (same date)</option></select></label>
+        <label class="field" id="it-int-wrap">Every<span class="int-row"><input type="number" id="it-int" min="1" max="12" value="${+r.interval || 1}"><span id="it-int-unit">week(s)</span></span></label>
+        <div class="field" id="it-days-wrap"><span class="form-label">On</span><div class="day-toggles">${DAY3.map((d, i) => `<button type="button" class="day-tg" data-dow="${i}" aria-pressed="false" title="${DAY[i]}">${d[0]}</button>`).join('')}</div></div>
+        <label class="field" id="it-until-wrap">Ends<input type="date" id="it-until" value="${esc(r.until || '')}" title="Leave empty to repeat with no end date"></label>
+      </div>
+      <div class="grid-2" id="it-where-wrap">
+        <label class="field">Where<select id="it-mode"><option value="">Not specified</option><option value="in-person">In person</option><option value="online">Online</option></select></label>
+        <label class="field">Location / link<input type="text" id="it-loc" value="${esc(it.location || '')}" placeholder="Room 204, Zoom link…"></label>
+      </div>
       <label class="field">Notes<textarea id="it-notes" placeholder="Instructions, links, page numbers…">${esc(it.notes || '')}</textarea></label>
       <div class="form-section"><div class="form-label">Checklist</div>
         <div class="subtasks" id="it-subs"></div>
@@ -1158,28 +1589,63 @@ function openItemEditor(seed = {}) {
       </div>
     </form>
     <footer>
-      ${existing ? `<button class="btn danger left" id="it-del">${ICON.trash} Delete</button>` : ''}
+      ${existing ? `<button class="btn danger left" id="it-del">${ICON.trash} Delete</button><button class="btn" id="it-dup">Duplicate</button>` : ''}
       <button class="btn" data-close>Cancel</button>
       <button class="btn primary" id="it-save">Save</button>
-    </footer>`, { color: it.course ? courseColor(it.course) : 'var(--PERSONAL)' });
+    </footer>`, { color: it.course ? courseColor(it.course) : it.color || 'var(--PERSONAL)' });
 
   $('#it-prio').value = it.priority || 'normal';
   $('#it-mode').value = it.mode || '';
+  $('#it-freq').value = r.freq || 'none';
+  let byDay = r.byDay?.length ? [...r.byDay] : [D.parse(shownDate || D.today()).getDay()];
+  let color = it.color || '';
+  let cat = it.cat || '';
+  $$('[data-ecat]', modal).forEach((b) => (b.onclick = () => {
+    cat = cat === b.dataset.ecat ? '' : b.dataset.ecat;
+    $$('[data-ecat]', modal).forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.ecat === cat)));
+    if (!$('#it-title').value.trim() && cat) $('#it-title').value = EVENT_CATS[cat][1];
+    if (!color && !$('#it-course').value) modal.style.setProperty('--c', cat ? EVENT_CATS[cat][2] : 'var(--PERSONAL)');
+  }));
   const syncKind = () => {
     $$('[data-kind]', modal).forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.kind === it.kind)));
     const ev = it.kind === 'event' || it.kind === 'exam';
+    const canAllDay = it.kind === 'event' || it.kind === 'reminder';
+    const allDay = canAllDay && $('#it-allday').checked;
     const frame = !ev && $('#it-frame').checked;
-    $('#it-frame-wrap').classList.toggle('hidden', ev);
-    $('#it-end-wrap').classList.toggle('hidden', !ev && !frame);
-    $('#it-mode-wrap').classList.toggle('hidden', !ev);
+    const repeats = it.kind !== 'assignment';
+    const freq = $('#it-freq').value;
+    $('#it-allday-wrap').classList.toggle('hidden', !canAllDay);
+    $('#it-frame-wrap').classList.toggle('hidden', ev || allDay);
+    $('#it-start-wrap').classList.toggle('hidden', allDay);
+    $('#it-end-wrap').classList.toggle('hidden', allDay || (!ev && !frame));
+    $('#it-where-wrap').classList.toggle('hidden', !ev);
+    $('#it-cat-wrap').classList.toggle('hidden', it.kind !== 'event');
+    $('#it-repeat-wrap').classList.toggle('hidden', !repeats);
+    $('#it-int-wrap').classList.toggle('hidden', !['daily', 'weekly', 'monthly'].includes(freq));
+    $('#it-int-unit').textContent = { daily: 'day(s)', weekly: 'week(s)', monthly: 'month(s)' }[freq] || '';
+    $('#it-days-wrap').classList.toggle('hidden', freq !== 'weekly');
+    $('#it-until-wrap').classList.toggle('hidden', freq === 'none');
+    $('#it-color-wrap').classList.toggle('hidden', !!$('#it-course').value);
+    $$('.day-tg', modal).forEach((b) => b.setAttribute('aria-pressed', String(byDay.includes(+b.dataset.dow))));
     $('#it-date-lbl').textContent = it.kind === 'assignment' ? 'Due date' : 'Date';
     $('#it-start-lbl').textContent = ev ? 'Start time' : frame ? (it.kind === 'assignment' ? 'Due from' : 'From') : it.kind === 'assignment' ? 'Due time (optional)' : 'Time (optional)';
     $('#it-end-lbl').textContent = ev ? 'End time' : it.kind === 'assignment' ? 'Due by' : 'To';
   };
   $('#it-frame').onchange = () => { syncKind(); if ($('#it-frame').checked) ($('#it-start').value ? $('#it-end') : $('#it-start')).focus(); };
+  ['#it-allday', '#it-freq'].forEach((sel) => ($(sel).onchange = syncKind));
   $$('[data-kind]', modal).forEach((b) => (b.onclick = () => { it.kind = b.dataset.kind; syncKind(); }));
+  $$('.day-tg', modal).forEach((b) => (b.onclick = () => {
+    const d = +b.dataset.dow;
+    byDay = byDay.includes(d) ? (byDay.length > 1 ? byDay.filter((x) => x !== d) : byDay) : [...byDay, d];
+    syncKind();
+  }));
+  $$('[data-color]', modal).forEach((b) => (b.onclick = () => {
+    color = b.dataset.color;
+    $$('[data-color]', modal).forEach((x) => x.classList.toggle('on', x === b));
+    modal.style.setProperty('--c', color || 'var(--PERSONAL)');
+  }));
   syncKind();
-  $('#it-course').onchange = (e) => modal.style.setProperty('--c', e.target.value ? courseColor(e.target.value) : 'var(--PERSONAL)');
+  $('#it-course').onchange = (e) => { modal.style.setProperty('--c', e.target.value ? courseColor(e.target.value) : color || 'var(--PERSONAL)'); syncKind(); };
 
   const drawSubs = () => {
     $('#it-subs').innerHTML = it.subtasks.map((s, i) => `<div class="subtask">
@@ -1197,18 +1663,14 @@ function openItemEditor(seed = {}) {
     $('#it-files').innerHTML = it.attachments.map((f, i) => `<div class="attach">${ICON.clip}<a href="#" data-fo="${i}" title="${esc(f.name)}">${esc(f.name)}</a>
       <span class="muted small">${(f.size / 1024).toFixed(0)} KB</span><button type="button" class="icon-btn" data-fd="${i}" aria-label="Remove">${ICON.trash.replace('<svg', '<svg style="width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2"')}</button></div>`).join('');
     $$('[data-fo]', modal).forEach((a) => (a.onclick = (e) => { e.preventDefault(); openAttachment(it.attachments[a.dataset.fo]); }));
-    $$('[data-fd]', modal).forEach((b) => (b.onclick = () => {
-      const [f] = it.attachments.splice(+b.dataset.fd, 1);
-      if (f.cloud) fetch(`/api/files?id=${encodeURIComponent(f.id)}`, { method: 'DELETE' }).catch(() => {});
-      drawFiles();
-    }));
+    $$('[data-fd]', modal).forEach((b) => (b.onclick = () => { it.attachments.splice(+b.dataset.fd, 1); drawFiles(); }));
   };
   drawFiles();
   const addFiles = async (files) => {
     for (const file of files) {
       const limit = sync.cloud ? MAX_CLOUD_FILE : MAX_LOCAL_FILE;
       if (file.size > limit) { toast(`${file.name} is too large (max ${(limit / 1e6).toFixed(1)} MB)`); continue; }
-      const dataUrl = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+      const dataUrl = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(file); });
       const att = { id: uid('f'), name: file.name, size: file.size, type: file.type };
       if (sync.cloud) {
         toast(`Uploading ${file.name}…`);
@@ -1226,38 +1688,71 @@ function openItemEditor(seed = {}) {
   dz.ondragleave = () => dz.classList.remove('over');
   dz.ondrop = (e) => { e.preventDefault(); dz.classList.remove('over'); addFiles([...e.dataTransfer.files]); };
 
-  const save = () => {
-    it.title = $('#it-title').value.trim();
-    if (!it.title) { $('#it-title').focus(); toast('Add a title'); return; }
-    it.course = $('#it-course').value || null;
-    it.priority = $('#it-prio').value;
-    it.date = $('#it-date').value || '';
-    it.start = $('#it-start').value || '';
-    const ev = it.kind === 'event' || it.kind === 'exam';
+  // Read the form into a copy of the item; returns null (and says why) if something is off.
+  const collect = () => {
+    const ed = structuredClone(it);
+    ed.title = $('#it-title').value.trim();
+    if (!ed.title) { $('#it-title').focus(); toast('Add a title'); return null; }
+    ed.course = $('#it-course').value || null;
+    ed.color = ed.course ? '' : color;
+    ed.cat = ed.kind === 'event' ? cat : '';
+    ed.priority = $('#it-prio').value;
+    ed.date = $('#it-date').value || '';
+    const ev = ed.kind === 'event' || ed.kind === 'exam';
+    const allDay = (ed.kind === 'event' || ed.kind === 'reminder') && $('#it-allday').checked;
     const frame = !ev && $('#it-frame').checked;
-    it.end = (ev || frame) && it.start ? $('#it-end').value || '' : '';
-    if (frame && it.end && it.end <= it.start) { $('#it-end').focus(); toast('The end time must be after the start time'); return; }
-    if (ev && it.start && (!it.end || it.end <= it.start)) it.end = D.hm(Math.min(D.mins(it.start) + 60, 1439));
-    it.mode = ev ? $('#it-mode').value : '';
-    it.notes = $('#it-notes').value;
-    it.subtasks = it.subtasks.filter((s) => s.text.trim());
-    setStatus(it, $('#it-status').value);
-    it.grade = $('#it-grade').value.trim();
-    it.weight = $('#it-weight').value.trim();
-    upsert('items', it);
+    ed.start = allDay ? '' : $('#it-start').value || '';
+    ed.end = (ev || frame) && ed.start ? $('#it-end').value || '' : '';
+    if (frame && ed.end && ed.end <= ed.start) { $('#it-end').focus(); toast('The end time must be after the start time'); return null; }
+    if (ev && ed.start && (!ed.end || ed.end <= ed.start)) ed.end = D.hm(Math.min(D.mins(ed.start) + 60, 1439));
+    ed.mode = ev ? $('#it-mode').value : '';
+    ed.location = ev ? $('#it-loc').value.trim() : '';
+    const freq = ed.kind === 'assignment' ? 'none' : $('#it-freq').value;
+    if (freq !== 'none' && !ed.date) { $('#it-date').focus(); toast('A repeating event needs a start date'); return null; }
+    const until = $('#it-until').value;
+    if (freq !== 'none' && until && until < ed.date) { $('#it-until').focus(); toast('The end date is before the first date'); return null; }
+    ed.recur = freq === 'none' ? null : { freq, interval: clamp(+$('#it-int').value || 1, 1, 52), byDay: freq === 'weekly' ? byDay.slice().sort() : [], until };
+    if (!ed.recur) ed.exdates = [];
+    ed.notes = $('#it-notes').value;
+    ed.subtasks = ed.subtasks.filter((x) => x.text.trim());
+    setStatus(ed, $('#it-status').value);
+    ed.grade = $('#it-grade').value.trim();
+    ed.weight = $('#it-weight').value.trim();
+    return ed;
+  };
+  const save = async () => {
+    const ed = collect();
+    if (!ed) return;
+    if (recurring && occ) {
+      const scope = await chooseScope('Edit repeating event');
+      if (!scope) return;
+      applySeriesEdit(existing, ed, occ, scope);
+    } else upsert('items', ed);
+    // Files removed in the editor are deleted once nothing else uses them.
+    if (existing) deleteItemFiles({ ...existing, attachments: (existing.attachments || []).filter((f) => !ed.attachments.some((x) => x.id === f.id)) });
     closeModal();
     commit();
-    toast(existing ? 'Saved' : `${kindName(it.kind)} added`);
+    toast(existing ? 'Saved' : `${kindName(ed.kind)} added`);
   };
   $('#it-save').onclick = save;
   $('#it-form').onsubmit = (e) => { e.preventDefault(); save(); };
-  if (existing) $('#it-del').onclick = () => {
-    if (!confirm('Delete this item?')) return;
-    for (const f of it.attachments) if (f.cloud) fetch(`/api/files?id=${encodeURIComponent(f.id)}`, { method: 'DELETE' }).catch(() => {});
-    remove('items', it.id);
-    closeModal();
-    commit();
-  };
+  if (existing) {
+    $('#it-del').onclick = async () => {
+      if (!(await deleteItem(existing, occ))) return;
+      closeModal();
+      commit();
+      toast('Deleted');
+    };
+    $('#it-dup').onclick = () => {
+      const ed = collect();
+      if (!ed) return;
+      const copy = { ...ed, id: uid('t'), title: ed.title + ' (copy)', createdAt: Date.now(), exdates: [] };
+      upsert('items', copy);
+      commit({ rerender: true });
+      openItemEditor(copy);
+      toast('Duplicated');
+    };
+  }
 }
 async function openAttachment(f) {
   if (f.cloud) return window.open(`/api/files?id=${encodeURIComponent(f.id)}`, '_blank', 'noopener');
@@ -1289,6 +1784,14 @@ function openSettings() {
         <label class="field">Clock<select id="st-clock"><option value="12">12-hour</option><option value="24">24-hour</option></select></label>
         <label class="field">Density<select id="st-density"><option value="normal">Comfortable</option><option value="compact">Compact</option></select></label>
       </div>
+      <label class="check small"><input type="checkbox" id="st-fun" ${st.fun !== false ? 'checked' : ''}> Hearts & stars burst out of some clicks ♥★</label>
+      <div class="section-title" style="margin:6px 0 0">Levels</div>
+      <div class="card level-list">${[...Array(MAX_LEVEL)].map((_, i) => {
+        const n = i + 1, ok = levelAvailable(n), L = n === 1 ? BASE_L1.term : data.levels[n];
+        return `<div class="level-row ${n === currentLevel() ? 'on' : ''}"><b>Level ${n}</b>
+          <span class="muted small">${ok ? `${fmtDate(L.start, { year: true })} – ${fmtDate(L.end, { year: true })}${n === 1 ? ' · official timetable' : ` · ${(L.courses || []).length} courses`}` : 'Unlocks with LEVEL UP!'}</span>
+          ${ok && n !== currentLevel() ? `<button class="btn sm" data-level="${n}">View</button>` : ''}${ok && n > 1 ? `<button class="btn sm" data-edit-level="${n}">Edit setup</button>` : ''}${n === 1 ? `<button class="btn sm" data-edit-level="1">${data.levels[1] ? 'Edit extra courses & periods' : 'Add courses & periods'}</button>` : ''}</div>`;
+      }).join('')}</div>
       <div class="section-title" style="margin:6px 0 0">Your data</div>
       <div class="note-hint">${sync.cloud ? `✅ Cloud sync is on${sync.backend === 'turso' ? ' (Turso database)' : ''} — notes, deadlines, checks and settings are saved online and shared by every device you sign in on. A backup is kept for each of the last 30 days.`
         : '💾 Saved in this browser only. To sync across devices, connect a Turso database in your Vercel project (Storage tab) and redeploy — see README.'}</div>
@@ -1311,6 +1814,9 @@ function openSettings() {
     commit();
   };
   $$('select', modal).forEach((s) => (s.onchange = upd));
+  $('#st-fun').onchange = (e) => { data.settings.fun = e.target.checked; data.settingsUpdatedAt = Date.now(); commit({ rerender: false }); if (e.target.checked) burst(innerWidth / 2, innerHeight / 2); };
+  $$('[data-edit-level]', modal).forEach((b) => (b.onclick = () => openLevelWizard(+b.dataset.editLevel)));
+  $$('[data-level]', modal).forEach((b) => b.addEventListener('click', () => closeModal()));
   $('#st-backup').onclick = () => download(`level1-backup-${D.today()}.json`, JSON.stringify({ ...data, exportedAt: new Date().toISOString() }, null, 1), 'application/json');
   $('#st-ics').onclick = () => download('level1-schedule.ics', buildICS(), 'text/calendar');
   if (sync.cloud) loadBackups();
@@ -1534,6 +2040,14 @@ function openImport() {
     toast(`Imported ${picked.length} item${picked.length === 1 ? '' : 's'}`);
   };
 }
+function icsRecur(it, timed) {
+  if (!isRecurring(it)) return [];
+  const r = it.recur, by = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+  const parts = r.freq === 'weekdays' ? ['FREQ=WEEKLY', 'BYDAY=MO,TU,WE,TH,FR']
+    : [`FREQ=${r.freq.toUpperCase()}`, `INTERVAL=${r.interval || 1}`, ...(r.freq === 'weekly' && r.byDay?.length ? [`BYDAY=${r.byDay.map((d) => by[d]).join(',')}`] : [])];
+  if (r.until) parts.push(`UNTIL=${r.until.replace(/-/g, '')}${timed ? 'T235959' : ''}`);
+  return [`RRULE:${parts.join(';')}`, ...(it.exdates || []).map((d) => (timed ? `EXDATE:${d.replace(/-/g, '')}T${it.start.replace(':', '')}00` : `EXDATE;VALUE=DATE:${d.replace(/-/g, '')}`))];
+}
 function buildICS() {
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
   const icsEsc = (s) => String(s || '').replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/[,;]/g, (c) => '\\' + c);
@@ -1556,7 +2070,7 @@ function buildICS() {
       timed ? `DTSTART:${dt(it.date, it.start)}` : `DTSTART;VALUE=DATE:${dt(it.date)}`,
       timed ? `DTEND:${dt(it.date, end)}` : `DTEND;VALUE=DATE:${dt(D.iso(D.add(D.parse(it.date), 1)))}`,
       `SUMMARY:${icsEsc((it.kind === 'assignment' ? 'DUE: ' : '') + (it.course ? codeLabel(it.course) + ' ' : '') + it.title)}`,
-      `DESCRIPTION:${icsEsc(it.notes)}`, 'END:VEVENT']);
+      `DESCRIPTION:${icsEsc(it.notes)}`, ...(it.location ? [`LOCATION:${icsEsc(it.location)}`] : []), ...icsRecur(it, timed), 'END:VEVENT']);
   }
   return ['BEGIN:VCALENDAR', 'VERSION:2.0', `PRODID:-//${SCHED.term.program}//EN`, 'CALSCALE:GREGORIAN', `X-WR-CALNAME:${SCHED.term.program} — Level ${SCHED.term.level || 1}`, ...ev.flat(), 'END:VCALENDAR'].join('\r\n');
 }
@@ -1627,7 +2141,7 @@ function buildPrint(from, to, opts) {
   for (let w = D.sow(from); w <= to; w = D.add(w, 7)) weeks.push([...Array(7)].map((_, i) => D.iso(D.add(w, i))));
   const entries = (iso) => {
     const ses = sessionsOn(iso, { all: !opts.mine }).map((s) => ({ ...s, rel: relevance(s) }));
-    const its = opts.items ? itemsOn(iso).map(itemToEntry) : [];
+    const its = opts.items ? itemsOn(iso).map((it) => itemToEntry(it, iso)) : [];
     return [...ses, ...its].sort((a, b) => (a.start || '00:00').localeCompare(b.start || '00:00'));
   };
   const weekEntries = (days) => days.flatMap(entries);
@@ -1756,6 +2270,264 @@ function buildPrint(from, to, opts) {
 window.addEventListener('afterprint', () => { $('#print-root').innerHTML = ''; });
 
 /* ================================================================== */
+/* Levels: LEVEL UP!, setup wizard, switching                          */
+/* ================================================================== */
+function switchLevel(n) {
+  if (!levelAvailable(n)) return;
+  data.settings.currentLevel = n;
+  data.settingsUpdatedAt = Date.now();
+  commit();
+  toast(`Viewing Level ${n}`);
+}
+
+function levelUp() {
+  const cur = currentLevel();
+  if (cur >= MAX_LEVEL) return toast('Level 4 is the final level — you made it! 🎓');
+  const prog = levelProgress();
+  if (prog.remaining.length) return openLockedLevelUp(prog);
+  const next = cur + 1;
+  if (!levelAvailable(next)) return openLevelWizard(next);
+  const modal = openModal(`${modalHead(`Level ${next} is ready ★`, 'Its courses and class periods are already set up.')}
+    <div class="body"><p style="margin:0">Jump to your Level ${next} timetable, or change its courses and periods first.</p></div>
+    <footer><button class="btn" id="lv-edit">Edit Level ${next} setup</button><button class="btn primary" id="lv-go">Go to Level ${next} →</button></footer>`);
+  $('#lv-edit', modal).onclick = () => openLevelWizard(next);
+  $('#lv-go', modal).onclick = () => { closeModal(); switchLevel(next); celebrate(); };
+}
+
+function openLockedLevelUp(prog) {
+  const lvl = currentLevel();
+  const modal = openModal(`${modalHead(`🔒 LEVEL UP! is locked`, `Finish all ${prog.total} Level ${lvl} courses to unlock Level ${lvl + 1}.`)}
+    <div class="body">
+      <div class="lock-progress"><div class="progress"><i style="width:${Math.round(((prog.total - prog.remaining.length) / prog.total) * 100)}%"></i></div>
+        <span><b>${prog.total - prog.remaining.length}</b> of ${prog.total} courses complete</span></div>
+      <div class="muted small">A course counts as complete once its last class is over, or when you mark it complete (for example after final grades are in).</div>
+      <div class="card">${prog.remaining.map((c) => {
+        const last = courseStatus(c).last;
+        return `<div class="lock-row" style="--c:${courseColor(c)}"><span class="sw"></span><div><b>${codeLabel(c)}</b> ${esc(SCHED.courses[c])}
+          <div class="muted small">${last ? `Last class ${fmtDate(last.date, { year: true })}` : 'No classes scheduled'}</div></div>
+          <button class="btn sm" data-lock-done="${esc(c)}">✓ Mark complete</button></div>`;
+      }).join('')}</div>
+    </div>
+    <footer><button class="btn" data-close>Close</button><button class="btn" id="lk-courses">Open Courses</button></footer>`);
+  $$('[data-lock-done]', modal).forEach((b) => (b.onclick = () => {
+    setCourseDone(b.dataset.lockDone, true);
+    const p = levelProgress();
+    if (p.remaining.length) openLockedLevelUp(p);
+    else { closeModal(); levelUp(); }
+  }));
+  $('#lk-courses', modal).onclick = () => { closeModal(); setView('courses'); };
+}
+
+function levelTermDefaults(n) {
+  const prevEnd = n - 1 === 1 ? BASE_L1.term.end : data.levels[n - 1]?.end || D.today();
+  let start = D.add(D.parse(prevEnd), 1);
+  while (start.getDay() !== 1) start = D.add(start, 1); // next Monday
+  return { start: D.iso(start), end: D.iso(D.add(start, 7 * 15 - 3)) }; // 15 weeks, ending Friday
+}
+
+// Multi-step setup: term → courses → weekly class periods → review.
+function openLevelWizard(n, { step = 0 } = {}) {
+  const existing = data.levels[n];
+  const l1 = n === 1;
+  const draft = existing ? structuredClone(existing)
+    : { level: n, ...(l1 ? { start: BASE_L1.term.start, end: BASE_L1.term.end } : levelTermDefaults(n)), breaks: [], courses: [], periods: [] };
+  if (l1) Object.assign(draft, { start: BASE_L1.term.start, end: BASE_L1.term.end });
+  if (!draft.courses.length) draft.courses.push({ code: '', name: '', instructor: '', color: PALETTE[0] });
+  const STEPS = ['Term', 'Courses', 'Class periods', 'Review'];
+  const order = l1 ? [1, 2, 3] : [0, 1, 2, 3]; // Level 1's term comes from the official timetable
+  if (!order.includes(step)) step = order[0];
+  const modal = openModal(`<header><span class="bar" style="background:linear-gradient(#ffd43b,#f783ac)"></span><div style="flex:1">
+      <h2>${l1 ? 'Level 1 — your extra courses & class periods' : existing ? `Level ${n} setup` : `★ LEVEL UP! Welcome to Level ${n}`}</h2><div class="muted small" id="lw-sub"></div></div>
+      <button class="icon-btn" data-close aria-label="Close">${ICON.x.replace('<svg', '<svg style="width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2"')}</button></header>
+    <div class="lw-steps" id="lw-steps"></div><div class="body" id="lw-body"></div><footer id="lw-foot"></footer>`, { wide: true });
+  const body = $('#lw-body', modal);
+
+  const setPath = (path, value) => {
+    const keys = path.split('.');
+    let o = draft;
+    for (const k of keys.slice(0, -1)) o = o[k];
+    o[keys.at(-1)] = value;
+  };
+  const normCode = (c) => c.toUpperCase().replace(/\s+/g, '');
+  const courseSel = (sel) => draft.courses.filter((c) => c.code).map((c) => `<option value="${esc(c.code)}" ${c.code === sel ? 'selected' : ''}>${codeLabel(c.code)} · ${esc(c.name || '')}</option>`).join('');
+
+  const views = [
+    () => `<p class="lw-intro">${existing ? 'Change the term dates or days off.' : `Congrats on finishing Level ${n - 1}! 🎉 Let's build your Level ${n} timetable. First, when does the term run?`}</p>
+      <div class="grid-2"><label class="field">First day of classes<input type="date" data-f="start" value="${esc(draft.start)}"></label>
+        <label class="field">Last day of classes<input type="date" data-f="end" value="${esc(draft.end)}"></label></div>
+      <div class="form-section"><div class="form-label">Days off (reading week, holidays…) — no classes are scheduled on these days</div>
+        ${draft.breaks.map((b, i) => `<div class="lw-row lw-break"><input type="text" placeholder="e.g. Reading week" data-f="breaks.${i}.label" value="${esc(b.label || '')}">
+          <input type="date" data-f="breaks.${i}.from" value="${esc(b.from || '')}" aria-label="From"><span class="muted">to</span><input type="date" data-f="breaks.${i}.to" value="${esc(b.to || '')}" aria-label="To (optional)">
+          <button type="button" class="icon-btn" data-rm="breaks.${i}" aria-label="Remove">✕</button></div>`).join('')}
+        <button type="button" class="btn sm" data-add="break">${ICON.plus} Add days off</button></div>`,
+    () => `<p class="lw-intro">${l1 ? 'Level 1\'s official courses come from the timetable. Add any extra courses here (electives, study groups, tutoring…) — or skip straight to class periods to add extra sessions for an official course.' : `Which courses are you taking in Level ${n}?`}</p>
+      <div class="lw-courses"><div class="lw-row lw-head"><span>Code</span><span>Course name</span><span>Instructor</span><span>Colour</span><span></span></div>
+      ${draft.courses.map((c, i) => `<div class="lw-row lw-course">
+        <input type="text" placeholder="DH 201" data-f="courses.${i}.code" value="${esc(c.code.replace(/^DH(?=\d)/, 'DH '))}" aria-label="Course code">
+        <input type="text" placeholder="e.g. Clinical Practice II" data-f="courses.${i}.name" value="${esc(c.name)}" aria-label="Course name">
+        <input type="text" placeholder="e.g. Ms. Morrow" data-f="courses.${i}.instructor" value="${esc(c.instructor || '')}" aria-label="Instructor">
+        <input type="color" data-f="courses.${i}.color" value="${esc(c.color || PALETTE[i % PALETTE.length])}" aria-label="Colour">
+        <button type="button" class="icon-btn" data-rm="courses.${i}" aria-label="Remove course">✕</button></div>`).join('')}</div>
+      <button type="button" class="btn sm" data-add="course">${ICON.plus} Add course</button>`,
+    () => `<p class="lw-intro">Add each course's class periods — the times it meets every week. Online and in-person periods are shown differently on the timetable.</p>
+      ${[...draft.courses.filter((c) => c.code), ...(l1 ? Object.keys(BASE_L1.courses).map((code) => ({ code, name: BASE_L1.courses[code], color: '', official: true })) : [])].map((c) => {
+        const list = draft.periods.map((p, i) => [p, i]).filter(([p]) => p.code === c.code);
+        return `<section class="lw-card" style="--c:${c.official ? courseColor(c.code) : esc(c.color)}"><h3><span class="sw"></span>${codeLabel(c.code)} <span>${esc(c.name)}${c.official ? ' · official timetable — add extra sessions only' : ''}</span></h3>
+          ${list.length ? '' : '<div class="muted small">No periods yet.</div>'}
+          ${list.map(([p, i]) => `<div class="lw-period">
+            <div class="day-toggles">${DAY3.map((d, di) => `<button type="button" class="day-tg" data-day="${i}.${di}" aria-pressed="${(p.days || []).includes(di)}" title="${DAY[di]}">${d.slice(0, 2)}</button>`).join('')}</div>
+            <label class="field">Start<input type="time" data-f="periods.${i}.start" value="${esc(p.start || '')}"></label>
+            <label class="field">End<input type="time" data-f="periods.${i}.end" value="${esc(p.end || '')}"></label>
+            <label class="field">Type<select data-f="periods.${i}.type">${Object.entries(PERIOD_TYPES).map(([k, v]) => `<option value="${k}" ${k === (p.type || 'lecture') ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+            <label class="field">Where<select data-f="periods.${i}.mode"><option value="in-person" ${p.mode !== 'online' ? 'selected' : ''}>In person</option><option value="online" ${p.mode === 'online' ? 'selected' : ''}>Online</option></select></label>
+            <label class="field">Room / link<input type="text" data-f="periods.${i}.location" value="${esc(p.location || '')}" placeholder="Room 204"></label>
+            <label class="field">Repeats<select data-f="periods.${i}.every"><option value="1" ${(p.every || 1) == 1 ? 'selected' : ''}>Every week</option><option value="2" ${p.every == 2 ? 'selected' : ''}>Every 2 weeks</option></select></label>
+            <label class="field">From <span class="muted">(optional)</span><input type="date" data-f="periods.${i}.from" value="${esc(p.from || '')}"></label>
+            <label class="field">Until <span class="muted">(optional)</span><input type="date" data-f="periods.${i}.until" value="${esc(p.until || '')}"></label>
+            <button type="button" class="icon-btn lw-rm" data-rm="periods.${i}" aria-label="Remove period">✕</button></div>`).join('')}
+          <button type="button" class="btn sm" data-add="period" data-code="${esc(c.code)}">${ICON.plus} Add period</button></section>`;
+      }).join('')}`,
+    () => {
+      const sched = buildLevelSchedule(n, draft);
+      const classes = sched.sessions.filter((x) => x.kind === 'class');
+      const weekly = draft.periods.reduce((a, p) => a + (p.days || []).length * Math.max(0, D.mins(p.end || '00:00') - D.mins(p.start || '00:00')) / (p.every || 1), 0) / 60;
+      return `<p class="lw-intro">Here's your Level ${n} at a glance.</p>
+        <dl class="kv-list">${l1 ? '' : '<dt>Term</dt>'}${l1 ? '' : `<dd>${fmtDate(draft.start, { year: true })} – ${fmtDate(draft.end, { year: true })}</dd>`}
+          <dt>Days off</dt><dd>${draft.breaks.length ? draft.breaks.map((b) => `${esc(b.label || 'No classes')} (${fmtDate(b.from)}${b.to && b.to !== b.from ? ' – ' + fmtDate(b.to) : ''})`).join(', ') : '—'}</dd>
+          <dt>Classes</dt><dd>${classes.length} sessions · about ${+weekly.toFixed(1)} h a week</dd></dl>
+        <div class="note-hint">Study blocks, prep time, commutes, shifts and appointments aren't class periods — after this, drag on the week view (or use <b>New → Event</b>) to add them, once or repeating, with a category like 📚 Study or 🚌 Commute.</div>
+        <div class="card">${[...draft.courses, ...(l1 ? [...new Set(draft.periods.map((p) => p.code))].filter((code) => BASE_L1.courses[code]).map((code) => ({ code, name: BASE_L1.courses[code], color: '' })) : [])].map((c) => {
+          const ps = draft.periods.filter((p) => p.code === c.code);
+          return `<div class="lock-row" style="--c:${c.color ? esc(c.color) : courseColor(c.code)}"><span class="sw"></span><div><b>${codeLabel(c.code)}</b> ${esc(c.name)}${c.instructor ? ` <span class="muted">· ${esc(c.instructor)}</span>` : ''}
+            <div class="muted small">${ps.length ? ps.map((p) => `${(p.days || []).slice().sort().map((d) => DAY3[d]).join(' & ')} ${fmtRange(p.start, p.end)} · ${PERIOD_TYPES[p.type || 'lecture']} · ${p.mode === 'online' ? 'online' : 'in person'}${p.location ? ' · ' + esc(p.location) : ''}${p.every == 2 ? ' · every 2 weeks' : ''}`).join('<br>') : '<span style="color:var(--warn)">No class periods — it will appear in your course list only.</span>'}</div></div></div>`;
+        }).join('')}</div>`;
+    },
+  ];
+
+  const validate = (i) => {
+    if (i === 0) {
+      if (!draft.start || !draft.end || draft.end <= draft.start) return 'Pick a first and last day (the last day must be after the first).';
+      if (draft.breaks.some((b) => !b.from || (b.to && b.to < b.from))) return 'Each set of days off needs a start date (and an end date after it).';
+    }
+    if (i === 1) {
+      draft.courses = draft.courses.filter((c) => c.code || c.name);
+      if (!draft.courses.length && !l1) { draft.courses.push({ code: '', name: '', instructor: '', color: PALETTE[0] }); return 'Add at least one course.'; }
+      for (const c of draft.courses) {
+        if (l1 && BASE_L1.courses[c.code]) return `${c.code} is already an official Level 1 course — add its extra sessions on the next step instead.`;
+        if (!c.code || !c.name) return 'Every course needs a code and a name.';
+        if (!/^[A-Z0-9-]{2,12}$/.test(c.code)) return `"${c.code}" isn't a valid code — use letters and numbers, like DH 201.`;
+      }
+      if (new Set(draft.courses.map((c) => c.code)).size !== draft.courses.length) return 'Two courses have the same code.';
+    }
+    if (i === 2) {
+      for (const p of draft.periods) {
+        const c = draft.courses.find((x) => x.code === p.code) || (l1 && BASE_L1.courses[p.code] ? { code: p.code } : null);
+        if (!(p.days || []).length) return `Pick at least one day for each ${c ? codeLabel(c.code) : ''} period.`;
+        if (!p.start || !p.end || p.end <= p.start) return `Each ${c ? codeLabel(c.code) : ''} period needs a start and end time (end after start).`;
+      }
+    }
+    return '';
+  };
+
+  const draw = (i) => {
+    step = i;
+    const pos = order.indexOf(i), prev = order[pos - 1], next = order[pos + 1];
+    $('#lw-sub', modal).textContent = `Step ${pos + 1} of ${order.length}: ${STEPS[i]}`;
+    $('#lw-steps', modal).innerHTML = order.map((k, j) => `<button type="button" class="lw-step ${k === i ? 'on' : j < pos ? 'past' : ''}" ${existing || l1 || j < pos ? `data-go="${k}"` : 'disabled'}>${j + 1}. ${STEPS[k]}</button>`).join('');
+    body.innerHTML = views[i]();
+    $('#lw-foot', modal).innerHTML = `${prev !== undefined ? '<button class="btn left" id="lw-back">← Back</button>' : ''}<button class="btn" data-close>Cancel</button>
+      ${next !== undefined ? '<button class="btn primary" id="lw-next">Next →</button>' : `<button class="btn primary levelup-go" id="lw-done">${existing || l1 ? 'Save changes' : `★ Start Level ${n}`}</button>`}`;
+    $$('[data-close]', modal).forEach((b) => (b.onclick = closeModal));
+    $$('[data-go]', modal).forEach((b) => (b.onclick = () => { const err = validate(step); if (err && order.indexOf(+b.dataset.go) > pos) return toast(err); draw(+b.dataset.go); }));
+    $('#lw-back', modal)?.addEventListener('click', () => draw(prev));
+    $('#lw-next', modal)?.addEventListener('click', () => { const err = validate(i); if (err) { toast(err); draw(i); return; } draw(next); });
+    $('#lw-done', modal)?.addEventListener('click', finish);
+    body.querySelector('input, select')?.focus();
+  };
+
+  body.addEventListener('input', (e) => {
+    const f = e.target.dataset.f;
+    if (!f) return;
+    let v = e.target.value;
+    if (/^courses\.\d+\.code$/.test(f)) {
+      const i = +f.split('.')[1], old = draft.courses[i].code;
+      v = normCode(v);
+      for (const p of draft.periods) if (p.code === old) p.code = v;
+    }
+    if (/\.every$/.test(f)) v = +v;
+    setPath(f, v);
+  });
+  body.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-add],[data-rm],[data-day]');
+    if (!t) return;
+    if (t.dataset.day) {
+      const [i, d] = t.dataset.day.split('.').map(Number);
+      const days = new Set(draft.periods[i].days || []);
+      days.has(d) ? days.delete(d) : days.add(d);
+      draft.periods[i].days = [...days];
+      t.setAttribute('aria-pressed', String(days.has(d)));
+      return;
+    }
+    if (t.dataset.add === 'break') draft.breaks.push({ label: '', from: '', to: '' });
+    if (t.dataset.add === 'course') draft.courses.push({ code: '', name: '', instructor: '', color: PALETTE[draft.courses.length % PALETTE.length] });
+    if (t.dataset.add === 'period') {
+      const prev = [...draft.periods].reverse().find((p) => p.code === t.dataset.code);
+      draft.periods.push({ id: uid('p'), code: t.dataset.code, days: prev ? [...prev.days] : [1], start: prev?.start || '09:00', end: prev?.end || '11:00', type: 'lecture', mode: prev?.mode || 'in-person', location: prev?.location || '', every: 1, from: '', until: '' });
+    }
+    if (t.dataset.rm) {
+      const [list, i] = t.dataset.rm.split('.');
+      const [gone] = draft[list].splice(+i, 1);
+      if (list === 'courses' && gone?.code) draft.periods = draft.periods.filter((p) => p.code !== gone.code);
+    }
+    draw(step);
+  });
+
+  function finish() {
+    for (const k of order.slice(0, -1)) { const err = validate(k); if (err) { toast(err); return draw(k); } }
+    draft.level = n;
+    draft.updatedAt = Date.now();
+    data.levels[n] = draft;
+    if (!l1) { data.settings.currentLevel = n; data.settingsUpdatedAt = Date.now(); }
+    closeModal();
+    commit();
+    if (!existing && !l1) { celebrate(); toast(`★ Welcome to Level ${n}!`); } else toast(`Level ${n} updated`);
+  }
+  draw(step);
+}
+
+/* ================================================================== */
+/* Fun: hearts & stars                                                 */
+/* ================================================================== */
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+function burst(x, y, { count = 9, spread = 70, size = 18 } = {}) {
+  if (reducedMotion.matches) return;
+  const glyphs = [['♥', '#ff4d8d'], ['♥', '#ff8fb8'], ['❤', '#f03e3e'], ['★', '#fcc419'], ['✦', '#ffd43b'], ['★', '#ffa94d']];
+  for (let i = 0; i < count; i++) {
+    const [ch, color] = glyphs[Math.floor(Math.random() * glyphs.length)];
+    const el = document.createElement('span');
+    el.className = 'fx';
+    el.textContent = ch;
+    el.style.cssText = `left:${x}px;top:${y}px;color:${color};font-size:${size * (0.6 + Math.random() * 0.8)}px`;
+    document.body.appendChild(el);
+    const ang = Math.random() * Math.PI * 2, dist = spread * (0.5 + Math.random());
+    el.animate([
+      { transform: 'translate(-50%, -50%) scale(.3) rotate(0deg)', opacity: 1 },
+      { transform: `translate(calc(-50% + ${Math.cos(ang) * dist}px), calc(-50% + ${Math.sin(ang) * dist - 20}px)) scale(1) rotate(${(Math.random() - 0.5) * 120}deg)`, opacity: 1, offset: 0.6 },
+      { transform: `translate(calc(-50% + ${Math.cos(ang) * dist * 1.2}px), calc(-50% + ${Math.sin(ang) * dist + 25}px)) scale(.8) rotate(${(Math.random() - 0.5) * 200}deg)`, opacity: 0 },
+    ], { duration: 800 + Math.random() * 500, easing: 'cubic-bezier(.2,.7,.3,1)' }).onfinish = () => el.remove();
+  }
+}
+function celebrate() {
+  const w = innerWidth, h = innerHeight;
+  [[w / 2, h / 3], [w / 4, h / 2], [(3 * w) / 4, h / 2]].forEach(([x, y], i) => setTimeout(() => burst(x, y, { count: 26, spread: 180, size: 26 }), i * 220));
+}
+// Every so often a click sends out a little burst of hearts and stars.
+document.addEventListener('pointerdown', (e) => {
+  if (data.settings.fun === false || e.button !== 0 || Math.random() > 0.2) return;
+  burst(e.clientX, e.clientY);
+}, { passive: true });
+
+/* ================================================================== */
 /* Events / navigation                                                 */
 /* ================================================================== */
 function navigate(dir) {
@@ -1767,9 +2539,13 @@ function navigate(dir) {
 
 document.addEventListener('click', (e) => {
   if (e.target.matches('[data-toggle]')) return;
-  const t = e.target.closest('[data-action],[data-nav],[data-open],[data-goto],[data-view],[data-others],[data-courses-all],[data-legend]');
+  const att = e.target.closest('[data-attend]');
+  if (att) { e.preventDefault(); e.stopPropagation(); return toggleAttended(att.dataset.attend); }
+  const t = e.target.closest('[data-action],[data-nav],[data-open],[data-add-date],[data-goto],[data-view],[data-level],[data-others],[data-courses-all],[data-legend]');
   if (!t) return;
   if (t.dataset.view) return setView(t.dataset.view);
+  if (t.dataset.level) return switchLevel(+t.dataset.level);
+  if (t.dataset.addDate) return openItemEditor({ date: t.dataset.addDate, kind: 'event' });
   if (t.dataset.nav !== undefined) return navigate(+t.dataset.nav);
   if (t.dataset.legend) {
     legendCollapsed = t.dataset.legend === 'close';
@@ -1780,14 +2556,17 @@ document.addEventListener('click', (e) => {
   if (t.dataset.others) { data.settings.others = t.dataset.others; data.settingsUpdatedAt = Date.now(); return commit(); }
   if (t.dataset.goto) { ui.cursor = D.parse(t.dataset.goto); return setView('week'); }
   if (t.dataset.open) {
-    const [src, id] = [t.dataset.open.slice(0, 1), t.dataset.open.slice(2)];
-    if (src === 's') return openSession(id);
+    if (Date.now() < suppressClickUntil) return; // the pointer just finished dragging an event
+    const [src, rest] = [t.dataset.open.slice(0, 1), t.dataset.open.slice(2)];
+    if (src === 's') return openSession(rest);
+    const [id, occ] = rest.split('|');
     const it = data.items.find((i) => i.id === id);
-    if (it) openItemEditor(it);
+    if (it) openItemEditor(it, { occ: occ || it.date });
     return;
   }
   const a = t.dataset.action;
   if (a === 'new-item') openItemEditor({ date: ui.view === 'week' || ui.view === 'month' ? pickDefaultDate() : D.today(), course: ui.view === 'tasks' ? ui.taskCourse || null : null });
+  else if (a === 'level-up') levelUp();
   else if (a === 'print') openPrint();
   else if (a === 'settings') openSettings();
   else if (a === 'import') openImport();
@@ -1815,6 +2594,7 @@ function pickDefaultDate() {
 }
 
 document.addEventListener('keydown', (e) => {
+  if ((e.key === ' ' || e.key === 'Enter') && e.target.matches?.('[data-attend]')) { e.preventDefault(); return toggleAttended(e.target.dataset.attend); }
   if (e.key === 'Escape') return closeModal();
   if ($('#modal-root').innerHTML || e.target.closest('input, textarea, select, [contenteditable]') || e.metaKey || e.ctrlKey || e.altKey) return;
   const k = e.key.toLowerCase();
@@ -1871,8 +2651,6 @@ function seedDeadlines() {
   if (!['week', 'month', 'agenda', 'tasks', 'notes', 'courses'].includes(ui.view)) ui.view = 'week';
   showSyncState();
   await loadSchedule();
-  const today = D.today();
-  if (today < SCHED.term.start || today > SCHED.term.end) ui.cursor = D.parse(today < SCHED.term.start ? SCHED.term.start : SCHED.term.end);
   render();
   await pullRemote();
   seedDeadlines();
