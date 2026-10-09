@@ -747,5 +747,10 @@ input, select, textarea {
 .nb-due { padding: .5mm 0; }
 .nb-due.done { color: #444; text-decoration: line-through; }
 .nb-closed { color: #222; font-style: italic; padding: .4mm 0; }
+.nb-grid.full { gap: 3mm; margin-top: 3mm; }
+.nb-grid.full .nb-h { font-size: 8pt; padding: 1.2mm 2mm; }
+.nb-grid.full .nb-h b { font-size: 9pt; }
+.nb-when-row { font-size: 6.2pt; color: #222; padding: .8mm 2mm 0; line-height: 1.3; }
+.nb-grid.full .nb-lines { margin: 1mm 2mm 1.5mm; background-size: 100% 7mm; }
 .nb-lines { flex: 1; min-height: 5.5mm; margin: 1.2mm 1.5mm 1mm;
-            background-image: repeating-linear-gradient(to bottom, transparent 0 5.3mm, #9da3ab 5.3mm 5.5mm); }
+            background: linear-gradient(to bottom, transparent calc(100% - .25mm), #8c939c calc(100% - .25mm)) 0 0 / 100% 5.5mm repeat-y; }

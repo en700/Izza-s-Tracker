@@ -2144,6 +2144,7 @@ function openPrint() {
     <div class="body">
       <label class="field">Sheet<select id="pr-sheet">
         <option value="planner">Weekly planner — timetable + a notes section per class (1 week per page)</option>
+        <option value="notes">Course notes sheet — the whole page is note blocks, one per class (1 week per page)</option>
         <option value="list">Timetable only — compact list (fewest pages)</option>
         <option value="grid">Timetable only — time grid (2 weeks per page)</option></select></label>
       <label class="field">Weeks<select id="pr-range">
@@ -2177,11 +2178,13 @@ function openPrint() {
     const [a, b] = getRange();
     const weeks = Math.max(1, Math.ceil((D.diffDays(D.iso(a), D.iso(b)) + 1) / 7));
     const sheet = $('#pr-sheet').value;
-    const pages = sheet === 'planner' ? weeks : Math.ceil(weeks / (sheet === 'grid' ? 2 : 3.1));
+    const pages = sheet === 'planner' || sheet === 'notes' ? weeks : Math.ceil(weeks / (sheet === 'grid' ? 2 : 3.1));
     const about = `${weeks} week${weeks > 1 ? 's' : ''} → ${sheet === 'list' ? 'about ' : ''}${pages} page${pages > 1 ? 's' : ''}.`;
     $('#pr-hint').innerHTML = sheet === 'planner'
       ? `${about} A large timetable where every class has ☐ Prep ☐ Att ☐ Rev boxes and every event or due item a ☐ (already ticked ☑ if done here), then an empty lined notes box for each class plus a <i>Reminders & to-do</i> box.`
-      : about;
+      : sheet === 'notes'
+        ? `${about} A full page of lined note blocks — one for each class you have that week (with its class times), plus a <i>Reminders & to-do</i> block.`
+        : about;
   };
   est();
   $$('select, input', modal).forEach((el) => el.addEventListener('change', est));
@@ -2270,16 +2273,31 @@ function buildPrint(from, to, opts) {
   };
 
   // An empty notes box per class (plus one general box): everything trackable is in the timetable above.
-  const blocksHTML = (days, list) => {
+  // full: the course notes sheet — blocks fill the page and list that week's class times.
+  const blocksHTML = (days, list, { full = false } = {}) => {
+    const times = (code) => list.filter((e) => e.src === 's' && e.code === code && !isClosure(e))
+      .map((e) => `${DAY3[D.parse(e.date).getDay()]} ${D.parse(e.date).getDate()} ${fmtRange(e.start, e.end)}`).join(' · ');
     const blocks = codesIn(list).filter((c) => list.some((e) => e.src === 's' && e.code === c && !isClosure(e))).map((code) => `<section class="nb" style="--c:${courseColor(code)}">
         <div class="nb-h"><b>${codeLabel(code)}</b> ${esc(SCHED.courses[code])}<span class="nb-i">${esc((COURSE_INSTR[code] || []).join(', '))}</span></div>
+        ${full ? `<div class="nb-when-row">${esc(times(code))}</div>` : ''}
         <div class="nb-lines"></div></section>`);
-    blocks.push(`<section class="nb general"><div class="nb-h"><b>Reminders & to-do</b><span class="nb-i">this week</span></div><div class="nb-lines"></div></section>`);
-    const n = blocks.length;
+    const n = blocks.length + 1;
+    const cols = n <= 2 ? n : n <= 4 ? 2 : n <= 9 ? 3 : 4;
+    // On the notes sheet the Reminders block stretches over any empty slots in the last row.
+    const spare = full ? (cols - (n % cols)) % cols : 0;
+    blocks.push(`<section class="nb general" ${spare ? `style="grid-column: span ${spare + 1}"` : ''}><div class="nb-h"><b>Reminders & to-do</b><span class="nb-i">this week</span></div><div class="nb-lines"></div></section>`);
+    if (full) {
+      return `<div class="nb-grid full" style="grid-template-columns:repeat(${cols}, minmax(0, 1fr));grid-template-rows:repeat(${Math.ceil(n / cols)}, minmax(0, 1fr))">${blocks.join('')}</div>`;
+    }
     const rows = n <= 5 ? 1 : n <= 10 ? 2 : 3;
     return `<div class="nb-grid" style="grid-template-columns:repeat(${Math.ceil(n / rows)}, minmax(0, 1fr));grid-template-rows:repeat(${rows}, minmax(0, 1fr))">${blocks.join('')}</div>`;
   };
 
+  if (opts.sheet === 'notes') {
+    root.innerHTML = weeks.map((days, i) => `<div class="p-page planner ${i < weeks.length - 1 ? 'break' : ''}">
+        ${pageHead(`Course notes · ${weekTitle(days)}`, groupLine)}${blocksHTML(days, weekEntries(days), { full: true })}</div>`).join('');
+    return;
+  }
   if (opts.sheet === 'planner') {
     root.innerHTML = weeks.map((days, i) => {
       const list = weekEntries(days);
