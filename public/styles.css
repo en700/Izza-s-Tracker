@@ -373,20 +373,17 @@ body.has-sidebar .top-actions .btn-new { display: none; }
 .ev.exam, .ev.test { box-shadow: inset 0 0 0 2px var(--danger); }
 .ev.test { box-shadow: inset 0 0 0 2px var(--warn); }
 /* Carpool status chip (in-person classes) */
-.cp-chip { display: inline-flex; align-items: center; gap: 3px; height: 18px; padding: 0 6px 0 3px; border-radius: 9px; cursor: pointer; font-size: 10.5px; font-weight: 700;
+.cp-chip { display: inline-flex; align-items: center; gap: 2px; height: 18px; padding: 0 5px 0 3px; border-radius: 9px; cursor: pointer; font-size: 10.5px; font-weight: 700;
            background: color-mix(in srgb, var(--cp) 20%, var(--card)); color: color-mix(in srgb, var(--cp) 75%, var(--text)); border: 1.5px solid var(--cp); white-space: nowrap; }
 .cp-chip.on { background: var(--cp); color: #fff; }
 .cp-chip .cp-car { font-size: 11px; line-height: 1; }
+.cp-chip .cp-mark { font-size: 11px; font-weight: 900; line-height: 1; }
 .cp-chip:hover { filter: brightness(1.05); box-shadow: 0 0 0 2px color-mix(in srgb, var(--cp) 30%, transparent); }
 .cp-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .lg-table .cp-chip { padding: 0 4px; margin-right: 3px; cursor: default; }
-.ev { container-type: inline-size; }
-.ev .cp-chip { min-width: 0; flex: 0 1 auto; overflow: hidden; }
-/* With a carpool chip beside it, the Attended label pops up above the box instead of over the chip */
-.ev-foot.has-cp .att-box .att-lbl { right: -2px; top: auto; bottom: calc(100% + 4px); transform: none; }
-.ev .cp-chip .cp-txt { overflow: hidden; text-overflow: ellipsis; }
-@container (max-width: 96px) { .cp-chip .cp-txt { display: none; } .ev .cp-chip { padding: 0 3px; } }
-.row-ev .meta .cp-chip { height: 22px; font-size: 11.5px; padding: 0 8px 0 5px; }
+.ev .cp-chip { position: absolute; left: 6px; bottom: 3px; z-index: 1; }
+.row-ev .meta .cp-chip { height: 22px; padding: 0 7px 0 5px; }
+.row-ev .meta .cp-chip .cp-car, .row-ev .meta .cp-chip .cp-mark { font-size: 13px; }
 .cp-settings { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .cp-set { display: flex; gap: 6px; align-items: center; }
 .cp-set input[type=color] { width: 40px; height: 34px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); flex: none; }
@@ -400,9 +397,7 @@ body.has-sidebar .top-actions .btn-new { display: none; }
 .att-box.on { color: var(--ok); }
 .att-box:hover .att-tick { border-color: var(--ok); }
 .att-box:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.ev-foot { position: absolute; left: 6px; right: 3px; bottom: 3px; z-index: 1; display: flex; align-items: center; gap: 4px; pointer-events: none; }
-.ev-foot > * { pointer-events: auto; }
-.ev .att-box { position: relative; margin-left: auto; flex: none; }
+.ev .att-box { position: absolute; right: 3px; bottom: 3px; z-index: 1; }
 .ev .att-box .att-lbl { display: none; position: absolute; right: calc(100% + 4px); top: 50%; transform: translateY(-50%); white-space: nowrap;
                        background: var(--card); padding: 1px 5px; border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,.15); pointer-events: none; }
 .ev:hover .att-box:not(.on) .att-lbl { display: block; }

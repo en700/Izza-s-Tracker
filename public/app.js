@@ -372,7 +372,7 @@ function carpoolChip(e) {
   if (!hasCarpool(e)) return '';
   const on = !!getMeta(carpoolKey(e)).carpool, cp = carpoolCfg();
   return `<span class="cp-chip ${on ? 'on' : ''}" role="switch" tabindex="0" aria-checked="${on}" data-carpool="${esc(carpoolKey(e))}" style="--cp:${esc(on ? cp.onColor : cp.offColor)}"
-    title="${esc(on ? cp.onText : cp.offText)} — click to switch to “${esc(on ? cp.offText : cp.onText)}”"><span class="cp-car">🚗</span><span class="cp-txt">${esc(on ? cp.onText : cp.offText)}</span></span>`;
+    title="${esc(on ? cp.onText : cp.offText)} — click to switch to “${esc(on ? cp.offText : cp.onText)}”"><span class="cp-car">🚗</span><span class="cp-mark" aria-label="${esc(on ? cp.onText : cp.offText)}">${on ? '✓' : '✕'}</span></span>`;
 }
 const carpoolText = (e) => (hasCarpool(e) ? (getMeta(carpoolKey(e)).carpool ? carpoolCfg().onText : carpoolCfg().offText) : '');
 function toggleCarpool(id) {
@@ -609,7 +609,7 @@ function legendHTML() {
         <tr><td><span class="chip mine">${rad}</span></td><td>Your group</td></tr>
         <tr><td><span class="chip exam">EXAM</span></td><td>Exam / test</td></tr>
         <tr><td class="ico">${ICON.note}</td><td>Has class notes</td></tr>
-        <tr><td><span class="cp-chip on" style="--cp:${esc(carpoolCfg().onColor)}"><span class="cp-car">🚗</span></span><span class="cp-chip" style="--cp:${esc(carpoolCfg().offColor)}"><span class="cp-car">🚗</span></span></td><td>${esc(carpoolCfg().onText)} / ${esc(carpoolCfg().offText)} (in-person classes — tap to flip)</td></tr>
+        <tr><td><span class="cp-chip on" style="--cp:${esc(carpoolCfg().onColor)}"><span class="cp-car">🚗</span><span class="cp-mark">✓</span></span><span class="cp-chip" style="--cp:${esc(carpoolCfg().offColor)}"><span class="cp-car">🚗</span><span class="cp-mark">✕</span></span></td><td>${esc(carpoolCfg().onText)} / ${esc(carpoolCfg().offText)} (in-person classes — tap to flip)</td></tr>
         <tr><td class="ico" style="color:var(--ok);font-weight:800">✓</td><td>Attended</td></tr>
       </tbody>
     </table>
@@ -708,11 +708,7 @@ function evBlockHTML(e, top, height) {
     ${chips ? `<div class="chips">${groupChip(e)}</div>` : ''}
     ${detailLines ? `<div class="ev-detail" style="-webkit-line-clamp:${detailLines}">${esc(detail)}</div>` : ''}
     ${noteLines >= 1 ? `<div class="ev-note" style="-webkit-line-clamp:${noteLines}">${ICON.note} ${esc(note)}</div>` : ''}
-    ${e.recurring ? '<span class="ev-rep" title="Repeating event">🔁</span>' : ''}${draggable ? '<span class="ev-resize" aria-hidden="true"></span>' : ''}${(() => {
-      // Carpool chip (left) and Attended box (right) share one bottom row so they never overlap.
-      const cp = height >= 44 ? carpoolChip(e) : '', att = height >= 30 ? attendBox(e) : '';
-      return cp || att ? `<div class="ev-foot ${cp ? 'has-cp' : ''}">${cp}${att}</div>` : '';
-    })()}
+    ${e.recurring ? '<span class="ev-rep" title="Repeating event">🔁</span>' : ''}${draggable ? '<span class="ev-resize" aria-hidden="true"></span>' : ''}${height >= 30 ? attendBox(e) : ''}${height >= 44 ? carpoolChip(e) : ''}
   </button>`;
 }
 
