@@ -708,7 +708,11 @@ function evBlockHTML(e, top, height) {
     ${chips ? `<div class="chips">${groupChip(e)}</div>` : ''}
     ${detailLines ? `<div class="ev-detail" style="-webkit-line-clamp:${detailLines}">${esc(detail)}</div>` : ''}
     ${noteLines >= 1 ? `<div class="ev-note" style="-webkit-line-clamp:${noteLines}">${ICON.note} ${esc(note)}</div>` : ''}
-    ${e.recurring ? '<span class="ev-rep" title="Repeating event">🔁</span>' : ''}${draggable ? '<span class="ev-resize" aria-hidden="true"></span>' : ''}${height >= 30 ? attendBox(e) : ''}${height >= 44 ? carpoolChip(e) : ''}
+    ${e.recurring ? '<span class="ev-rep" title="Repeating event">🔁</span>' : ''}${draggable ? '<span class="ev-resize" aria-hidden="true"></span>' : ''}${(() => {
+      // Carpool chip (left) and Attended box (right) share one bottom row so they never overlap.
+      const cp = height >= 44 ? carpoolChip(e) : '', att = height >= 30 ? attendBox(e) : '';
+      return cp || att ? `<div class="ev-foot ${cp ? 'has-cp' : ''}">${cp}${att}</div>` : '';
+    })()}
   </button>`;
 }
 
@@ -2180,7 +2184,7 @@ function openPrint() {
     const pages = sheet === 'planner' ? weeks : Math.ceil(weeks / (sheet === 'grid' ? 2 : 3.1));
     const about = `${weeks} week${weeks > 1 ? 's' : ''} → ${sheet === 'list' ? 'about ' : ''}${pages} page${pages > 1 ? 's' : ''}.`;
     $('#pr-hint').innerHTML = sheet === 'planner'
-      ? `${about} Each class gets its own section with a checkbox row for every session (Prepared / Attended / Reviewed, already ticked if you ticked them here), what's due that week, your notes from the website and ruled lines for handwritten notes. There's also a general <i>Reminders & to-do</i> section.`
+      ? `${about} A large timetable where every class has ☐ Prep ☐ Att ☐ Rev boxes and every event or due item a ☐ (already ticked ☑ if done here), then an empty lined notes box for each class plus a <i>Reminders & to-do</i> box.`
       : about;
   };
   est();
@@ -2219,18 +2223,6 @@ function buildPrint(from, to, opts) {
   const isExam = (e) => e.kind === 'exam' || e.kind === 'test';
   const st = data.settings;
 
-  // Compact legend: only what appears on this page.
-  const legend = (list) => {
-    const codes = codesIn(list);
-    const modes = new Set(list.map((e) => e.mode));
-    const keys = [
-      modes.has('in-person') && '<span class="lk"><i class="k inperson"></i>In person</span>',
-      modes.has('online') && '<span class="lk"><i class="k online"></i>Online</span>',
-      list.some(isExam) && '<span class="lk"><i class="k exam"></i>Exam / test</span>',
-      opts.notes && list.some((e) => noteOf(e)) && '<span class="lk">✎ Your notes</span>',
-    ].filter(Boolean).join('');
-    return `<div class="p-legend">${keys}${codes.map((c) => `<span class="lc" style="--c:${courseColor(c)}"><i></i><b>${codeLabel(c)}</b> ${esc(COURSE_SHORT[c] || SCHED.courses[c])}${(COURSE_INSTR[c] || []).length ? ` <span class="li">· ${esc(COURSE_INSTR[c].slice(0, 2).join(', '))}${COURSE_INSTR[c].length > 2 ? ' +' + (COURSE_INSTR[c].length - 2) : ''}</span>` : ''}</span>`).join('')}</div>`;
-  };
   const pageHead = (title, sub) => `<div class="p-head"><h3>${esc(SCHED.term.program)} <span>· Level ${SCHED.term.level || 1} of ${SCHED.term.levels || 4} · ${title}</span></h3><div>${sub}</div></div>`;
   const groupLine = `${opts.mine ? `Pre-clinic ${esc(st.preGroup)} · Rad lab ${esc(st.radGroup)}` : 'All groups'} · printed ${fmtDate(D.today(), { year: true })}`;
   const weekTitle = (days) => {
@@ -2256,54 +2248,39 @@ function buildPrint(from, to, opts) {
     const lo = Math.floor(Math.min(480, ...timed.map((e) => D.mins(e.start))) / 60) * 60;
     const hi = Math.ceil(Math.max(1020, ...timed.map((e) => D.mins(e.end))) / 60) * 60;
     const nrows = (hi - lo) / 30;
-    const rowMM = Math.max(2.2, Math.min(6, maxMM / nrows));
+    const rowMM = Math.max(2.2, Math.min(7, maxMM / nrows));
     const px = (m) => ((m - lo) / 30) * rowMM;
     let times = '';
     for (let m = lo; m <= hi; m += 60) times += `<span style="top:${px(m)}mm">${fmtTime(D.hm(m), false)}</span>`;
     const pcols = days.map((iso) => {
       const dl = entries(iso);
       const closed = dayClosed(iso);
-      const pills = dl.filter((e) => !isTimed(e) && !isClosure(e)).map((e) => `${e.item?.done ? '☑' : '☐'} ${esc(e.title)}`).join('<br>');
+      const pills = dl.filter((e) => !isTimed(e) && !isClosure(e)).map((e) => `<span class="${e.item?.done ? 'pdone' : ''}">${e.item?.done ? '☑' : '☐'} ${e.item?.kind === 'assignment' ? '<b>Due</b> ' : ''}${e.start ? itemTime(e.item) + ' ' : ''}${esc(e.title)}</span>`).join('<br>');
       return `<div class="pcol ${closed ? 'closed' : ''}">${closed ? `<div class="pclosed">${esc(closed.title)}</div>` : ''}
         ${pills ? `<div class="ppills">${pills}</div>` : ''}
         ${layoutColumns(dl.filter(isTimed)).map((e) => {
           const w = 100 / (e._lanes || 1), l = (e._lane || 0) * w, h = px(D.mins(e.end)) - px(D.mins(e.start));
           const n = noteOf(e);
-          return `<div class="pev ${modeClass(e.mode)} ${isExam(e) ? 'exam' : ''}" style="--c:${entryColor(e)};top:${px(D.mins(e.start))}mm;height:${h - 0.3}mm;left:${l}%;width:calc(${w}% - .4mm);${e.rel === 'other' ? 'opacity:.55' : ''}">
-            <b>${esc(short(e))}${n && h <= rowMM * 4.5 ? ' ✎' : ''}</b>${h > rowMM * 2.2 ? `<span class="pm">${fmtRange(e.start, e.end)}</span>` : ''}${h > rowMM * 3.2 ? `<div class="pm">${esc(extra(e))}</div>` : ''}${n && h > rowMM * 4.5 ? `<div class="pn">✎ ${esc(clip(n, 120))}</div>` : ''}</div>`;
+          const m = e.src === 's' ? getMeta(e.id) : null;
+          const box = (on) => (on ? '☑' : '☐');
+          // Classes: Prep/Att/Rev boxes (ticked if done on the site); your events: one done box.
+          const checks = m ? `<div class="pck">${box(m.prepared)} Prep ${box(m.attended)} Att ${box(m.reviewed)} Rev</div>` : '';
+          const lead = e.src === 'i' ? `${box(e.item.done)} ` : !checks || h <= rowMM * 3 ? `${box(m?.attended)} ` : '';
+          return `<div class="pev ${modeClass(e.mode)} ${isExam(e) ? 'exam' : ''} ${e.src === 'i' && e.item.done ? 'pdone' : ''}" style="--c:${entryColor(e)};top:${px(D.mins(e.start))}mm;height:${h - 0.3}mm;left:${l}%;width:calc(${w}% - .4mm);${e.rel === 'other' ? 'opacity:.55' : ''}">
+            <b>${lead}${esc(short(e))}${n && h <= rowMM * 5.5 ? ' ✎' : ''}</b>${h > rowMM * 2 ? `<span class="pm">${fmtRange(e.start, e.end)}</span>` : ''}${h > rowMM * 3 ? `<div class="pm">${esc(extra(e))}</div>` : ''}${h > rowMM * 3 ? checks : ''}${n && h > rowMM * 5.5 ? `<div class="pn">✎ ${esc(clip(n, 140))}</div>` : ''}</div>`;
         }).join('')}</div>`;
     }).join('');
     return `<div class="p-grid" style="--pcols:${cols};--prow:${rowMM}mm;--nrows:${nrows}"><div class="ph"></div>${dayHeads(days)}<div class="ptimes">${times}</div>${pcols}</div>`;
   };
 
-  // A section per class for the week: session check rows, notes, what's due, ruled lines.
+  // An empty notes box per class (plus one general box): everything trackable is in the timetable above.
   const blocksHTML = (days, list) => {
-    const ck = (on, label) => `<span class="ck ${on ? 'on' : ''}">${on ? '☑' : '☐'} ${label}</span>`;
-    const dueLine = (it) => `<div class="nb-due ${it.done ? 'done' : ''}">${it.done ? '☑' : '☐'} <b>${it.kind === 'assignment' ? 'Due' : kindName(it.kind)} ${DAY3[D.parse(it.date).getDay()]} ${D.parse(it.date).getDate()}${it.start ? ', ' + itemTime(it) : ''}</b> ${esc(it.title)}</div>`;
-    const sesLine = (s) => {
-      const m = getMeta(s.id);
-      const n = noteOf(s);
-      return `<div class="nb-ses"><div class="nb-row"><span class="nb-when">${DAY3[D.parse(s.date).getDay()]} ${D.parse(s.date).getDate()} · ${fmtRange(s.start, s.end)}${isExam(s) ? ` <span class="nb-exam">${s.kind === 'test' ? 'TEST' : 'EXAM'}</span>` : ''}${s.group ? ` <span class="nb-grp">${esc(groupLabel(s))}</span>` : ''}${s.mode === 'online' ? ' <span class="nb-mode">online</span>' : ''}${hasCarpool(s) ? ` <span class="nb-mode">· 🚗 ${esc(carpoolText(s))}</span>` : ''}</span>
-        <span class="nb-cks">${ck(m.prepared, 'Prep')}${ck(m.attended, 'Att')}${ck(m.reviewed, 'Rev')}</span></div>
-        ${n ? `<div class="nb-note">✎ ${esc(clip(n, 260))}</div>` : ''}</div>`;
-    };
-    const blocks = codesIn(list).map((code) => {
-      const ses = list.filter((e) => e.src === 's' && e.code === code && !isClosure(e));
-      const due = list.filter((e) => e.src === 'i' && e.code === code).map((e) => e.item);
-      return `<section class="nb" style="--c:${courseColor(code)}">
+    const blocks = codesIn(list).filter((c) => list.some((e) => e.src === 's' && e.code === c && !isClosure(e))).map((code) => `<section class="nb" style="--c:${courseColor(code)}">
         <div class="nb-h"><b>${codeLabel(code)}</b> ${esc(SCHED.courses[code])}<span class="nb-i">${esc((COURSE_INSTR[code] || []).join(', '))}</span></div>
-        <div class="nb-body">${ses.map(sesLine).join('')}${due.map(dueLine).join('')}</div>
-        <div class="nb-lines"></div></section>`;
-    });
-    const general = list.filter((e) => !e.code && !isClosure(e));
-    const closures = [...new Set(list.filter(isClosure).map((e) => `${DAY3[D.parse(e.date).getDay()]} ${D.parse(e.date).getDate()}: ${e.title}`))];
-    blocks.push(`<section class="nb general" style="--c:#555">
-      <div class="nb-h"><b>Reminders & to-do</b><span class="nb-i">this week</span></div>
-      <div class="nb-body">${closures.map((c) => `<div class="nb-closed">${esc(c)}</div>`).join('')}
-        ${general.map((e) => (e.src === 'i' ? dueLine(e.item) : `<div class="nb-due">☐ <b>${DAY3[D.parse(e.date).getDay()]} ${D.parse(e.date).getDate()}${e.start ? ', ' + fmtRange(e.start, e.end) : ''}</b> ${esc(e.title)}</div>`)).join('')}</div>
-      <div class="nb-lines"></div></section>`);
+        <div class="nb-lines"></div></section>`);
+    blocks.push(`<section class="nb general"><div class="nb-h"><b>Reminders & to-do</b><span class="nb-i">this week</span></div><div class="nb-lines"></div></section>`);
     const n = blocks.length;
-    const rows = n <= 4 ? 1 : n <= 8 ? 2 : 3;
+    const rows = n <= 5 ? 1 : n <= 10 ? 2 : 3;
     return `<div class="nb-grid" style="grid-template-columns:repeat(${Math.ceil(n / rows)}, minmax(0, 1fr));grid-template-rows:repeat(${rows}, minmax(0, 1fr))">${blocks.join('')}</div>`;
   };
 
@@ -2311,8 +2288,8 @@ function buildPrint(from, to, opts) {
     root.innerHTML = weeks.map((days, i) => {
       const list = weekEntries(days);
       return `<div class="p-page planner ${i < weeks.length - 1 ? 'break' : ''}">
-        ${pageHead(weekTitle(days), groupLine)}${legend(list)}
-        ${gridHTML(days, list, 74)}
+        ${pageHead(weekTitle(days), groupLine)}
+        ${gridHTML(days, list, 122)}
         ${blocksHTML(days, list)}</div>`;
     }).join('');
     return;
@@ -2322,7 +2299,7 @@ function buildPrint(from, to, opts) {
   // its own one-line legend so whatever page it lands on, the key matches it.
   root.innerHTML = pageHead(weeks.length > 1 ? `${weeks.length} weeks` : 'week', groupLine) + weeks.map((days) => {
     const list = weekEntries(days);
-    return `<section class="p-week ${opts.sheet === 'grid' ? 'grid' : ''}"><div class="p-wh"><h4>${weekTitle(days)}</h4>${legend(list)}</div>
+    return `<section class="p-week ${opts.sheet === 'grid' ? 'grid' : ''}"><div class="p-wh"><h4>${weekTitle(days)}</h4></div>
       ${opts.sheet === 'grid' ? gridHTML(days, list, 70) : listHTML(days)}</section>`;
   }).join('');
 }

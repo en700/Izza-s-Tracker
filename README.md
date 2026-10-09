@@ -48,10 +48,9 @@ A password-protected timetable and school-year tracker for the dental hygiene pr
 - **Attended ticks** on every class in the week grid and the phone list, so you can mark attendance without opening the class.
 - **Hearts & stars** ♥★ burst out of some clicks (can be turned off in Settings, and stay off if you've asked your device to reduce motion).
 - **Print** (landscape, made to work in black and white: in person = solid box with a thick bar, online = dashed box,
-  exam/test = thick double border + the word EXAM/TEST). Each page's legend lists only the courses on it.
-  - *Weekly planner* (1 page per week): the week's timetable, then a section per class. Each section has a row for every
-    session with ☐ Prep ☐ Att ☐ Rev checkboxes (already ticked if you ticked them on the site), what's due that week,
-    the class notes you wrote on the site and ruled lines for handwritten notes, plus a *Reminders & to-do* section.
+  exam/test = thick double border + the word EXAM/TEST).   - *Weekly planner* (1 page per week): a large timetable where every class has ☐ Prep ☐ Att ☐ Rev boxes and every event or due
+    item has a ☐ box (printed ☑ if already ticked on the site), plus your class notes where they fit. Below it is an empty, lined
+    notes box for each class and a *Reminders & to-do* box.
   - *Compact list* (whole term ≈ 8 pages) and *Time grid* (2 weeks per page) for timetable-only printouts.
 - **Password protection** for every page, file and API call. Sessions last 30 days.
 

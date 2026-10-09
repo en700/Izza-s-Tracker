@@ -381,7 +381,9 @@ body.has-sidebar .top-actions .btn-new { display: none; }
 .cp-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .lg-table .cp-chip { padding: 0 4px; margin-right: 3px; cursor: default; }
 .ev { container-type: inline-size; }
-.ev .cp-chip { position: absolute; left: 6px; bottom: 3px; z-index: 1; max-width: calc(100% - 34px); overflow: hidden; }
+.ev .cp-chip { min-width: 0; flex: 0 1 auto; overflow: hidden; }
+/* With a carpool chip beside it, the Attended label pops up above the box instead of over the chip */
+.ev-foot.has-cp .att-box .att-lbl { right: -2px; top: auto; bottom: calc(100% + 4px); transform: none; }
 .ev .cp-chip .cp-txt { overflow: hidden; text-overflow: ellipsis; }
 @container (max-width: 96px) { .cp-chip .cp-txt { display: none; } .ev .cp-chip { padding: 0 3px; } }
 .row-ev .meta .cp-chip { height: 22px; font-size: 11.5px; padding: 0 8px 0 5px; }
@@ -398,7 +400,9 @@ body.has-sidebar .top-actions .btn-new { display: none; }
 .att-box.on { color: var(--ok); }
 .att-box:hover .att-tick { border-color: var(--ok); }
 .att-box:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.ev .att-box { position: absolute; right: 3px; bottom: 3px; z-index: 1; }
+.ev-foot { position: absolute; left: 6px; right: 3px; bottom: 3px; z-index: 1; display: flex; align-items: center; gap: 4px; pointer-events: none; }
+.ev-foot > * { pointer-events: auto; }
+.ev .att-box { position: relative; margin-left: auto; flex: none; }
 .ev .att-box .att-lbl { display: none; position: absolute; right: calc(100% + 4px); top: 50%; transform: translateY(-50%); white-space: nowrap;
                        background: var(--card); padding: 1px 5px; border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,.15); pointer-events: none; }
 .ev:hover .att-box:not(.on) .att-lbl { display: block; }
@@ -685,23 +689,10 @@ input, select, textarea {
 .p-head h3 { margin: 0; font-size: 11pt; color: #111; }
 .p-head h3 span { font-weight: 600; }
 .p-head .wk { font-size: 7.5pt; font-weight: 600; color: #555; margin-left: 2mm; }
-/* Compact legend strip: only what's on the page */
-.p-legend { display: flex; flex-wrap: wrap; gap: .8mm 3.2mm; font-size: 6pt; color: #111; padding: 1.2mm 0 1.6mm; align-items: center; }
-.p-legend .lk, .p-legend .lc { display: inline-flex; align-items: center; gap: 1mm; white-space: nowrap; }
-.p-legend .k { display: inline-block; width: 4.5mm; height: 2.4mm; border-radius: .5mm; }
-.p-legend .k.inperson { background: #e3e5e8; border: .25mm solid #222; border-left: .9mm solid #000; }
-.p-legend .k.online { border: .35mm dashed #222; }
-.p-legend .k.exam { border: .7mm double #000; }
-.p-legend .lc i { display: none; }
-.p-legend .lc b { color: #000; }
-.p-legend .li { color: #444; }
-.p-legend .lk + .lc { margin-left: 1.5mm; padding-left: 3mm; border-left: .2mm solid #bbb; }
 .p-week { break-inside: avoid; page-break-inside: avoid; margin-bottom: 3mm; }
 .p-week h4 { margin: 0; font-size: 8.5pt; white-space: nowrap; }
 .p-head + .p-week { margin-top: 2mm; }
 .p-wh { display: flex; align-items: baseline; gap: 4mm; margin-bottom: .6mm; }
-.p-wh .p-legend { padding: 0; flex: 1; justify-content: flex-end; gap: .6mm 2.4mm; font-size: 5.6pt; }
-.p-wh .p-legend .li { display: none; }
 .p-week.grid:nth-of-type(2n) { break-after: page; page-break-after: always; }
 .p-week h4 .wk { font-weight: 500; color: #333; font-size: 7pt; margin-left: 1.5mm; }
 .ph span { font-weight: 400; color: #333; }
@@ -739,8 +730,11 @@ input, select, textarea {
 .p-grid .pev.exam { border: .8mm double #000; }
 .p-grid .pev b { display: block; }
 .p-grid .pev .pm { color: #222; }
+.p-grid .pck { font-size: 5.6pt; margin-top: .3mm; white-space: nowrap; }
+.p-grid .pev.pdone b, .p-grid .pdone { text-decoration: line-through; }
+.p-page.planner .p-head { margin-bottom: 1.5mm; }
 /* Planner: per-class sections */
-.nb-grid { flex: 1; min-height: 0; display: grid; gap: 2mm; margin-top: 2.5mm; }
+.nb-grid { flex: 1; min-height: 0; display: grid; gap: 2mm; margin-top: 2mm; }
 .nb { border: .3mm solid #333; border-top: 1.2mm solid #333; border-radius: 1mm; display: flex; flex-direction: column; min-height: 0; overflow: hidden; break-inside: avoid; }
 .nb-h { padding: .8mm 1.5mm; font-size: 7pt; background: #f1f3f5; border-bottom: .25mm solid #333; display: flex; gap: 1.2mm; align-items: baseline; white-space: nowrap; overflow: hidden; }
 .nb-h b { color: #000; font-size: 8pt; }
@@ -758,5 +752,5 @@ input, select, textarea {
 .nb-due { padding: .5mm 0; }
 .nb-due.done { color: #444; text-decoration: line-through; }
 .nb-closed { color: #222; font-style: italic; padding: .4mm 0; }
-.nb-lines { flex: 1; min-height: 5.5mm; margin: .4mm 1.5mm 1mm;
+.nb-lines { flex: 1; min-height: 5.5mm; margin: 1.2mm 1.5mm 1mm;
             background-image: repeating-linear-gradient(to bottom, transparent 0 5.3mm, #9da3ab 5.3mm 5.5mm); }
