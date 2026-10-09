@@ -260,7 +260,21 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
 .new-entry:active { transform: translateY(1px); box-shadow: 0 1px 0 color-mix(in srgb, var(--accent) 55%, #000); }
 .new-entry:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 50%, transparent); outline-offset: 3px; }
 .new-entry .smiley { width: 28px; height: 28px; flex: none; filter: drop-shadow(0 1px 1px rgba(0,0,0,.2)); transition: transform .3s var(--ease, ease); }
-.new-entry:hover .smiley { transform: rotate(-12deg) scale(1.12); }
+.new-entry:hover .smiley { transform: rotate(-8deg) scale(1.14); }
+/* Smiley grins with sparkling teeth on hover (and while pressed on touch screens) */
+.smiley .smile { transition: opacity .12s; }
+.smiley .grin { opacity: 0; transition: opacity .15s; }
+.smiley .gleam { transform-box: view-box; }
+.smiley .glint { transform-box: fill-box; transform-origin: center; transform: scale(0); }
+.new-entry:hover .smiley .smile, .new-entry:focus-visible .smiley .smile, .fab:hover .smiley .smile, .fab:active .smiley .smile { opacity: 0; }
+.new-entry:hover .smiley .grin, .new-entry:focus-visible .smiley .grin, .fab:hover .smiley .grin, .fab:active .smiley .grin { opacity: 1; }
+.new-entry:hover .gleam, .new-entry:focus-visible .gleam, .fab:hover .gleam, .fab:active .gleam { animation: teeth-gleam 1.6s ease-in-out infinite; }
+.new-entry:hover .glint, .new-entry:focus-visible .glint, .fab:hover .glint, .fab:active .glint { animation: glint 1.6s ease-in-out infinite; }
+.smiley .g2 { animation-delay: .35s !important; }
+.smiley .g3 { animation-delay: .7s !important; }
+@keyframes teeth-gleam { 0% { transform: skewX(-20deg) translateX(-2px); } 55%, 100% { transform: skewX(-20deg) translateX(17px); } }
+@keyframes glint { 0%, 100% { transform: scale(0) rotate(0deg); opacity: 0; } 40% { transform: scale(1.15) rotate(45deg); opacity: 1; } 70% { transform: scale(.7) rotate(90deg); opacity: .8; } }
+@media (prefers-reduced-motion: reduce) { .smiley .glint { transform: scale(1); } }
 .new-entry kbd { font: inherit; font-size: 11px; font-weight: 700; padding: 0 6px; border-radius: 5px; background: rgba(255,255,255,.22); line-height: 18px; }
 .new-entry.compact { width: 44px; height: 44px; padding: 0; border-radius: 12px; position: relative; }
 .new-entry.compact .smiley { width: 26px; height: 26px; }
