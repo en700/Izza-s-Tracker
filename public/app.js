@@ -505,10 +505,13 @@ function evBlockHTML(e, top, height) {
   const code = e.code ? codeLabel(e.code) : e.src === 'i' ? 'Personal' : '';
   const icon = e.mode === 'online' ? ICON.online : e.mode === 'in-person' ? ICON.inperson : '';
   const label = `${code} ${entryTitle(e)}, ${fmtRange(e.start, e.end)}, ${modeLabel(e.mode)} ${e.group ? groupLabel(e) : ''}`;
-  // Fill the remaining height with chips, then the class notes.
+  // Fill the remaining height: group chip, then the detail line (wrapped), then the class notes.
   let room = height - 8 - 14 - 13 - (mid ? 28 : 0);
-  const chips = room >= 18 && (e.group || e.detail);
+  const chips = room >= 18 && e.group;
   if (chips) room -= 18;
+  const detail = e.group ? '' : e.detail || '';
+  const detailLines = detail ? Math.max(0, Math.min(note ? 2 : 4, Math.floor((room - 2) / 12))) : 0;
+  room -= detailLines ? detailLines * 12 + 2 : 0;
   const noteLines = note ? Math.floor(room / 12) : 0;
   return `<button class="${cls}" data-open="${e.src}:${esc(e.id)}" aria-label="${esc(label)}${note ? '. Notes: ' + esc(note.slice(0, 200)) : ''}"
       title="${note ? esc(note.slice(0, 400)) : ''}"
@@ -516,7 +519,8 @@ function evBlockHTML(e, top, height) {
     <div class="t1">${code ? `<span class="code">${code}</span>` : ''}${icon}${kindChip(e)}${note && noteLines < 1 ? `<span class="note-ico">${ICON.note}</span>` : ''}</div>
     ${mid ? `<div class="t2">${esc(entryTitle(e))}</div>` : ''}
     <div class="t3">${fmtRange(e.start, e.end)}</div>
-    ${chips ? `<div class="chips">${groupChip(e)}${e.detail && !e.group ? `<span class="t3">${esc(e.detail)}</span>` : ''}</div>` : ''}
+    ${chips ? `<div class="chips">${groupChip(e)}</div>` : ''}
+    ${detailLines ? `<div class="ev-detail" style="-webkit-line-clamp:${detailLines}">${esc(detail)}</div>` : ''}
     ${noteLines >= 1 ? `<div class="ev-note" style="-webkit-line-clamp:${noteLines}">${ICON.note} ${esc(note)}</div>` : ''}
   </button>`;
 }
@@ -526,7 +530,7 @@ function pillHTML(e) {
   const it = e.item;
   const kindLbl = { assignment: 'Due', exam: 'Exam', reminder: '', event: '' }[it.kind] || '';
   return `<button class="pill ${it.done ? 'done' : ''} ${it.kind}" data-open="i:${esc(it.id)}" style="--c:${entryColor(e)}" title="${esc(it.title)}">
-    <span class="box"></span><span class="tx">${kindLbl ? `<b>${kindLbl}:</b> ` : ''}${it.start ? fmtTime(it.start) + ' ' : ''}${esc(it.title)}</span></button>`;
+    <span class="box"></span><span class="tx">${kindLbl ? `<b>${kindLbl}:</b> ` : ''}${it.start ? itemTime(it) + ' ' : ''}${esc(it.title)}</span></button>`;
 }
 
 function weekNav(title, extra = '') {
@@ -607,7 +611,7 @@ function rowEvHTML(e) {
   if (e.src === 'i' && !isTimed(e)) {
     const it = e.item;
     return `<div class="row-ev none" data-open="i:${esc(it.id)}" style="--c:${entryColor(e)}">
-      <div class="tm">${it.start ? fmtTime(it.start) : it.kind === 'assignment' ? 'Due' : 'All day'}</div>
+      <div class="tm">${it.start ? itemTime(it) : it.kind === 'assignment' ? 'Due' : 'All day'}</div>
       <div><div class="ti" style="${it.done ? 'text-decoration:line-through;color:var(--muted)' : ''}">${esc(it.title)}</div>
       <div class="meta">${it.course ? `<span class="chip crs" style="--c:${entryColor(e)}">${codeLabel(it.course)}</span>` : ''}<span>${esc(kindName(it.kind))}</span>${it.done ? '<span>✓ done</span>' : ''}</div></div></div>`;
   }
@@ -731,7 +735,7 @@ function taskRowHTML(it) {
       <div class="meta">${it.course ? `<span class="chip crs" style="--c:${c}">${codeLabel(it.course)}</span>` : ''}<span>${kindName(it.kind)}</span>
       ${subs.length ? `<span>☑ ${subDone}/${subs.length}</span>` : ''}${(it.attachments || []).length ? `<span>${ICON.clip} ${(it.attachments || []).length}</span>` : ''}
       ${it.notes ? `<span>${ICON.note}</span>` : ''}</div></div>
-    <div class="due ${dueClass(it)}">${it.date ? relDay(it.date) : 'No date'}${it.start ? `<br>${fmtTime(it.start)}` : ''}</div>
+    <div class="due ${dueClass(it)}">${it.date ? relDay(it.date) : 'No date'}${it.start ? `<br>${itemTime(it)}` : ''}</div>
   </div>`;
 }
 const STATUS = { 'not-started': 'Not started', 'in-progress': 'In progress', done: 'Done' };
@@ -752,7 +756,7 @@ function gradePct(g) {
 // One list of every deadline: your items plus exams/tests from the timetable.
 function deadlineRows() {
   const rows = data.items.filter((i) => i.kind !== 'event' || i.status || i.grade).map((it) => ({
-    key: 'i:' + it.id, src: 'i', id: it.id, code: it.course, name: it.title, date: it.date, time: it.start, kind: it.kind,
+    key: 'i:' + it.id, src: 'i', id: it.id, code: it.course, name: it.title, date: it.date, time: it.start, end: it.end, kind: it.kind,
     status: statusOf(it), grade: it.grade || '', weight: it.weight ?? '', item: it,
   }));
   if (ui.taskTimetable) {
@@ -810,7 +814,7 @@ function renderTasks(v) {
         ${subs.length ? `<span class="muted small">☑ ${subs.filter((x) => x.done).length}/${subs.length}</span>` : ''}
         ${(it?.attachments || []).length ? `<span class="muted small">${ICON.clip}${it.attachments.length}</span>` : ''}
         ${it?.notes ? `<span class="muted small" title="${esc(it.notes.slice(0, 300))}">${ICON.note}</span>` : ''}</div></td>
-      <td class="dt ${over ? 'over' : ''}">${r.date ? `${MON[D.parse(r.date).getMonth()]} ${D.parse(r.date).getDate()}, ${D.parse(r.date).getFullYear()}${r.time ? ' ' + fmtTime(r.time).toUpperCase() : ''}` : 'No date'}
+      <td class="dt ${over ? 'over' : ''}">${r.date ? `${MON[D.parse(r.date).getMonth()]} ${D.parse(r.date).getDate()}, ${D.parse(r.date).getFullYear()}${r.time ? ' ' + (r.end && r.end > r.time ? fmtRange(r.time, r.end) : fmtTime(r.time)).toUpperCase() : ''}` : 'No date'}
         <div class="rel">${r.date ? (over ? 'Overdue · ' : '') + relDay(r.date) : ''}</div></td>
       <td><select class="status st-${r.status}" data-row="${r.key}" data-field="status" aria-label="Status">
         ${Object.entries(STATUS).map(([k, n]) => `<option value="${k}" ${k === r.status ? 'selected' : ''}>${n}</option>`).join('')}</select></td>
@@ -1097,6 +1101,9 @@ function openSession(id) {
   if (s.code) $('#ses-cnote').onclick = () => { closeModal(); ui.noteCourse = s.code; ui.noteActive = null; ui.noteMode = 'notes'; setView('notes'); };
 }
 
+// "11:59 pm" for a single due time, "1:00–3:00 pm" for a time frame.
+const itemTime = (it) => (it.start ? (it.end && it.end > it.start ? fmtRange(it.start, it.end) : fmtTime(it.start)) : '');
+
 function toggleItem(id, done) {
   const it = data.items.find((i) => i.id === id);
   if (!it) return;
@@ -1129,8 +1136,9 @@ function openItemEditor(seed = {}) {
       <div class="grid-3">
         <label class="field"><span id="it-date-lbl">Date</span><input type="date" id="it-date" value="${esc(it.date || '')}"></label>
         <label class="field"><span id="it-start-lbl">Time (optional)</span><input type="time" id="it-start" value="${esc(it.start || '')}"></label>
-        <label class="field" id="it-end-wrap">End time<input type="time" id="it-end" value="${esc(it.end || '')}"></label>
+        <label class="field" id="it-end-wrap"><span id="it-end-lbl">End time</span><input type="time" id="it-end" value="${esc(it.end || '')}"></label>
       </div>
+      <label class="check small" id="it-frame-wrap"><input type="checkbox" id="it-frame" ${it.end && it.kind !== 'event' && it.kind !== 'exam' ? 'checked' : ''}> Make it a time frame (from – to) instead of a single time</label>
       <label class="field" id="it-mode-wrap">Where<select id="it-mode"><option value="">Not specified</option><option value="in-person">In person</option><option value="online">Online</option></select></label>
       <label class="field">Notes<textarea id="it-notes" placeholder="Instructions, links, page numbers…">${esc(it.notes || '')}</textarea></label>
       <div class="form-section"><div class="form-label">Checklist</div>
@@ -1157,11 +1165,15 @@ function openItemEditor(seed = {}) {
   const syncKind = () => {
     $$('[data-kind]', modal).forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.kind === it.kind)));
     const ev = it.kind === 'event' || it.kind === 'exam';
-    $('#it-end-wrap').classList.toggle('hidden', !ev);
+    const frame = !ev && $('#it-frame').checked;
+    $('#it-frame-wrap').classList.toggle('hidden', ev);
+    $('#it-end-wrap').classList.toggle('hidden', !ev && !frame);
     $('#it-mode-wrap').classList.toggle('hidden', !ev);
     $('#it-date-lbl').textContent = it.kind === 'assignment' ? 'Due date' : 'Date';
-    $('#it-start-lbl').textContent = it.kind === 'assignment' ? 'Due time (optional)' : ev ? 'Start time' : 'Time (optional)';
+    $('#it-start-lbl').textContent = ev ? 'Start time' : frame ? (it.kind === 'assignment' ? 'Due from' : 'From') : it.kind === 'assignment' ? 'Due time (optional)' : 'Time (optional)';
+    $('#it-end-lbl').textContent = ev ? 'End time' : it.kind === 'assignment' ? 'Due by' : 'To';
   };
+  $('#it-frame').onchange = () => { syncKind(); if ($('#it-frame').checked) ($('#it-start').value ? $('#it-end') : $('#it-start')).focus(); };
   $$('[data-kind]', modal).forEach((b) => (b.onclick = () => { it.kind = b.dataset.kind; syncKind(); }));
   syncKind();
   $('#it-course').onchange = (e) => modal.style.setProperty('--c', e.target.value ? courseColor(e.target.value) : 'var(--PERSONAL)');
@@ -1219,7 +1231,9 @@ function openItemEditor(seed = {}) {
     it.date = $('#it-date').value || '';
     it.start = $('#it-start').value || '';
     const ev = it.kind === 'event' || it.kind === 'exam';
-    it.end = ev ? $('#it-end').value || '' : '';
+    const frame = !ev && $('#it-frame').checked;
+    it.end = (ev || frame) && it.start ? $('#it-end').value || '' : '';
+    if (frame && it.end && it.end <= it.start) { $('#it-end').focus(); toast('The end time must be after the start time'); return; }
     if (ev && it.start && (!it.end || it.end <= it.start)) it.end = D.hm(Math.min(D.mins(it.start) + 60, 1439));
     it.mode = ev ? $('#it-mode').value : '';
     it.notes = $('#it-notes').value;
@@ -1655,7 +1669,7 @@ function buildPrint(from, to, opts) {
 
   const listHTML = (days) => `<div class="p-list" style="--pcols:${cols}">${dayHeads(days)}${days.map((iso) => `<div>${entries(iso).map((e) => {
     if (isClosure(e)) return `<div class="closedcell">${esc(e.title)}</div>`;
-    if (e.src === 'i' && !isTimed(e)) return `<div class="pe none" style="--c:${entryColor(e)}">${e.item.done ? '☑' : '☐'} <b>${e.item.kind === 'assignment' ? 'Due: ' : ''}${esc(e.title)}</b>${e.start ? ` <span class="pt">${fmtTime(e.start)}</span>` : ''}</div>`;
+    if (e.src === 'i' && !isTimed(e)) return `<div class="pe none" style="--c:${entryColor(e)}">${e.item.done ? '☑' : '☐'} <b>${e.item.kind === 'assignment' ? 'Due: ' : ''}${esc(e.title)}</b>${e.start ? ` <span class="pt">${itemTime(e.item)}</span>` : ''}</div>`;
     const n = noteOf(e);
     return `<div class="pe ${modeClass(e.mode)} ${isExam(e) ? 'exam' : ''}" style="--c:${entryColor(e)};${e.rel === 'other' ? 'opacity:.55' : ''}">
       <span class="pt">${fmtRange(e.start, e.end)}</span> <b>${esc(short(e))}</b><div class="pm">${esc(extra(e))}</div>${n ? `<div class="pn">✎ ${esc(clip(n, 160))}</div>` : ''}</div>`;
@@ -1689,7 +1703,7 @@ function buildPrint(from, to, opts) {
   // A section per class for the week: session check rows, notes, what's due, ruled lines.
   const blocksHTML = (days, list) => {
     const ck = (on, label) => `<span class="ck ${on ? 'on' : ''}">${on ? '☑' : '☐'} ${label}</span>`;
-    const dueLine = (it) => `<div class="nb-due ${it.done ? 'done' : ''}">${it.done ? '☑' : '☐'} <b>${it.kind === 'assignment' ? 'Due' : kindName(it.kind)} ${DAY3[D.parse(it.date).getDay()]} ${D.parse(it.date).getDate()}${it.start ? ', ' + fmtTime(it.start) : ''}</b> ${esc(it.title)}</div>`;
+    const dueLine = (it) => `<div class="nb-due ${it.done ? 'done' : ''}">${it.done ? '☑' : '☐'} <b>${it.kind === 'assignment' ? 'Due' : kindName(it.kind)} ${DAY3[D.parse(it.date).getDay()]} ${D.parse(it.date).getDate()}${it.start ? ', ' + itemTime(it) : ''}</b> ${esc(it.title)}</div>`;
     const sesLine = (s) => {
       const m = getMeta(s.id);
       const n = noteOf(s);
