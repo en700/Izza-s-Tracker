@@ -55,6 +55,11 @@ A password-protected timetable and school-year tracker for the dental hygiene pr
   - *Compact list* (whole term ≈ 8 pages) and *Time grid* (2 weeks per page) for timetable-only printouts.
 - **Password protection** for every page, file and API call. Sessions last 30 days.
 
+**Home-screen app.** On iPhone, open the site in Safari and choose Share → *Add to Home Screen*. On Android, open it in Chrome and choose
+⋮ → *Add to Home screen* / *Install app*. It installs as "Pookie's DH" with the sparkly tooth icon and opens full screen.
+iPhone keeps home-screen apps' logins separate from Safari, so you'll be asked for the password once inside the app.
+The icons are generated from `public/favicon.svg` with `node tools/make_icons.mjs`.
+
 Keyboard shortcuts: `←`/`→` change week or month, `T` jumps to today, `N` adds a new item,
 `P` prints, and `1`–`6` switch views.
 

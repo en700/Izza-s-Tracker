@@ -50,6 +50,10 @@ test('matcher leaves the login page public', () => {
   const re = new RegExp('^' + config.matcher[0] + '$');
   assert.equal(re.test('/login'), false);
   assert.equal(re.test('/api/login'), false);
+  assert.equal(re.test('/manifest.webmanifest'), false);
+  assert.equal(re.test('/apple-touch-icon.png'), false);
+  assert.equal(re.test('/icons/icon-192.png'), false);
+  assert.equal(re.test('/schedule.json'), true);
   assert.equal(re.test('/'), true);
   assert.equal(re.test('/app.js'), true);
   assert.equal(re.test('/api/data'), true);
