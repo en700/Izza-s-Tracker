@@ -40,11 +40,26 @@ A password-protected timetable and school-year tracker for the dental hygiene pr
   periods (days, times, lecture/lab/clinic, in person or online, room, every week or every 2 weeks, optional date range), then a review.
   The 1–4 boxes in the header switch between levels you've set up. Level 1 can also get extra courses and periods
   (Courses → *Add courses & class periods*) on top of the official timetable.
-- **Google Calendar-style events.** Drag on an empty part of the week grid to create an event; a quick-add card opens with categories
-  (📚 Study, 📝 Prep, 🚌 Commute, 💼 Work, 🏃 Exercise, 🩺 Appointment, 🎉 Social, ⭐ Other). Drag your own events to move them, and drag
-  their bottom edge to resize. Events can repeat (daily, weekdays, weekly on chosen days, monthly, every N, until a date). Editing or
-  deleting one occurrence asks *This event / This and following / All events*. Events can also be all-day and have a location, a colour
-  or a duplicate. Repeating events export to `.ics` with their repeat rules.
+- **Calendar entries you design yourself.** Drag on an empty part of the week grid to create one (a quick-add card opens), or use
+  *New calendar entry*. Every entry has a type, an icon, a title, a course, a colour, a date, optional start/end times or all-day, a repeat
+  rule (daily, weekdays, weekly on chosen days, monthly, every N, until a date), a location, notes, a checklist and attachments.
+  Three switches decide how it behaves, whatever its type: **Task** (a tick-off box wherever it appears, plus status, priority, grade and
+  weight in Deadlines), **Exam / test** (EXAM badge) and **Class checks** (Prepared / Attended / Reviewed boxes like a class). Drag your
+  own entries to move them and drag their bottom edge to resize. Editing or deleting one occurrence of a repeating entry asks
+  *This event / This and following / All events*. Repeating entries export to `.ics` with their repeat rules.
+- **Entry types are yours.** There are no fixed categories: *Settings → Entry types* (or ✎ *Manage types* in the editor) lets you add,
+  rename, recolour, re-icon or remove types, and choose what new entries of each type start with (task, exam, class checks, time range).
+  A starter list (Assignment, Exam, Event, Reminder, Class, Meeting, Study, Prep, Commute, Work, Exercise, Appointment, Social, Other)
+  can be restored at any time. Removing a type never changes the entries that used it.
+- **Quick complete.** Every task has a tick box wherever it shows (week grid, month, agenda, phone lists and the Deadlines table), so
+  you can mark it done without opening it. Repeating tasks are ticked off one occurrence at a time.
+- **Agenda days fold away.** Tap a day's header to collapse it to just its date (with an item count) or open it again, with a smooth
+  animation. *Collapse all* / *Expand all* do every day at once. Each day has a **Day done** box; ticking it marks the day finished
+  (synced across devices) and folds it away.
+- **Made for phones.** Below 760 px wide the views move to a bottom tab bar, the header shrinks to the logo and a ☰ menu, and
+  the menu slides in from the side with LEVEL UP!, the level switcher, Import, Print, Settings, Entry types and Sign out.
+  Dialogs open as bottom sheets with the Save button always in reach (drag the handle down to dismiss), and the Month view becomes
+  a tap-friendly calendar with coloured dots that lists the chosen day underneath.
 - **Attended ticks** on every class in the week grid and the phone list, so you can mark attendance without opening the class.
 - **Hearts & stars** ♥★ burst out of some clicks (can be turned off in Settings, and stay off if you've asked your device to reduce motion).
 - **Print** (landscape, made to work in black and white: in person = solid box with a thick bar, online = dashed box,

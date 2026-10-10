@@ -216,18 +216,50 @@ function ensureLevel() {
 /* User data + sync                                                    */
 /* ================================================================== */
 const LS_KEY = 'l1s:data:v1';
-const DEFAULT_SETTINGS = { preGroup: 'A', radGroup: 'A2', others: 'hide', theme: 'auto', clock: '12', density: 'normal', hiddenCourses: [], currentLevel: 1, fun: true, completedCourses: [] };
+const DEFAULT_SETTINGS = { preGroup: 'A', radGroup: 'A2', others: 'hide', theme: 'auto', clock: '12', density: 'normal', hiddenCourses: [], currentLevel: 1, fun: true, completedCourses: [], types: null };
 function blankData() {
   return { version: 1, items: [], notes: [], sessionMeta: {}, levels: {}, deleted: {}, settings: { ...DEFAULT_SETTINGS }, settingsUpdatedAt: 0, updatedAt: 0, revision: 0 };
 }
 let data = blankData();
 const sync = { cloud: false, backend: '', state: 'local', pending: false, inflight: false, lastError: '' };
 
+/* ---- Entry types: a user-managed list (name, icon, colour, default behaviours) ---- */
+const DEFAULT_TYPES = [
+  { id: 'assignment', name: 'Assignment', icon: '📝', color: '#e8590c', task: true, range: false },
+  { id: 'exam', name: 'Exam / test', icon: '🧪', color: '#c92a2a', exam: true, range: true },
+  { id: 'event', name: 'Event', icon: '📅', color: '#1098ad', range: true },
+  { id: 'reminder', name: 'Reminder', icon: '🔔', color: '#f59f00', task: true, range: false },
+  { id: 'class', name: 'Class', icon: '🎓', color: '#0c8599', track: true, range: true },
+  { id: 'meeting', name: 'Meeting', icon: '👥', color: '#364fc7', range: true },
+  { id: 'study', name: 'Study', icon: '📚', color: '#1971c2', range: true },
+  { id: 'prep', name: 'Prep', icon: '✏️', color: '#6741d9', range: true },
+  { id: 'commute', name: 'Commute', icon: '🚌', color: '#868e96', range: true },
+  { id: 'work', name: 'Work', icon: '💼', color: '#8d5524', range: true },
+  { id: 'exercise', name: 'Exercise', icon: '🏃', color: '#2f9e44', range: true },
+  { id: 'appt', name: 'Appointment', icon: '🩺', color: '#d6336c', range: true },
+  { id: 'social', name: 'Social', icon: '🎉', color: '#f76707', range: true },
+  { id: 'other', name: 'Other', icon: '⭐', color: '#1098ad', range: true },
+];
+const typesList = () => (Array.isArray(data.settings.types) && data.settings.types.length ? data.settings.types : DEFAULT_TYPES);
+function typeOf(it) {
+  return typesList().find((t) => t.id === it?.type) || { id: it?.type || '', name: it?.type ? 'Entry' : 'Entry', icon: '•', color: '#1098ad' };
+}
+// Old entries had fixed kinds; give them a type and behaviour flags. `kind` is kept as a
+// derived summary (exam / task / event) for code that only needs the broad category.
+const deriveKind = (it) => (it.exam ? 'exam' : it.task ? 'assignment' : 'event');
+function migrateItem(it) {
+  if (!it.type) it.type = it.cat || { assignment: 'assignment', exam: 'exam', event: 'event', reminder: 'reminder' }[it.kind] || 'event';
+  if (it.task === undefined) it.task = it.kind === 'assignment' || it.kind === 'reminder';
+  if (it.exam === undefined) it.exam = it.kind === 'exam';
+  it.kind = deriveKind(it);
+  return it;
+}
+
 function normalizeData(d) {
   const b = blankData();
   const out = { ...b, ...(d || {}) };
   out.settings = { ...DEFAULT_SETTINGS, ...(d?.settings || {}) };
-  out.items = Array.isArray(out.items) ? out.items : [];
+  out.items = (Array.isArray(out.items) ? out.items : []).map(migrateItem);
   out.notes = Array.isArray(out.notes) ? out.notes : [];
   out.sessionMeta = out.sessionMeta && typeof out.sessionMeta === 'object' ? out.sessionMeta : {};
   out.deleted = out.deleted && typeof out.deleted === 'object' ? out.deleted : {};
@@ -359,15 +391,18 @@ function commit({ rerender = true } = {}) {
 
 function getMeta(id) { return data.sessionMeta[id] || {}; }
 // Tick-box shown on class blocks/rows so attendance can be checked without opening the class.
-const attendBox = (e) => (e.src === 's' && !isClosure(e) && e.start
-  ? `<span class="att-box ${getMeta(e.id).attended ? 'on' : ''}" role="checkbox" tabindex="0" aria-checked="${!!getMeta(e.id).attended}" data-attend="${esc(e.id)}" title="${getMeta(e.id).attended ? 'Attended — click to undo' : 'Mark attended'}"><span class="att-tick">✓</span><span class="att-lbl">Attended</span></span>`
-  : '');
+const tracksAttendance = (e) => (e.src === 's' ? !isClosure(e) && !!e.start : !!e.item?.track);
+const attendBox = (e) => {
+  if (!tracksAttendance(e)) return '';
+  const k = metaKey(e), on = !!getMeta(k).attended;
+  return `<span class="att-box ${on ? 'on' : ''}" role="checkbox" tabindex="0" aria-checked="${on}" data-attend="${esc(k)}" title="${on ? 'Attended — click to undo' : 'Mark attended'}"><span class="att-tick">✓</span><span class="att-lbl">Attended</span></span>`;
+};
 // Carpool status on in-person classes: one tap flips between two user-chosen labels/colours.
 const DEFAULT_CARPOOL = { onText: 'Carpool', offText: 'No carpool', onColor: '#2f9e44', offColor: '#adb5bd' };
 const carpoolCfg = () => ({ ...DEFAULT_CARPOOL, ...(data.settings.carpool || {}) });
 // In-person classes and in-person calendar events; repeating events keep a status per occurrence.
 const hasCarpool = (e) => e.mode === 'in-person' && !isClosure(e) && !!e.start && (e.src === 's' || isTimed(e));
-const carpoolKey = (e) => (e.src === 's' ? e.id : `${e.id}@${e.occ || e.date}`);
+const carpoolKey = (e) => metaKey(e);
 function carpoolChip(e) {
   if (!hasCarpool(e)) return '';
   const on = !!getMeta(carpoolKey(e)).carpool, cp = carpoolCfg();
@@ -427,9 +462,29 @@ function groupChip(s) {
 function itemToEntry(it, iso = it.date) {
   return {
     src: 'i', id: it.id, occ: iso, date: iso, start: it.start || null, end: it.end || null, allDay: !it.start,
-    code: it.course || null, title: it.title, mode: it.mode || (it.kind === 'event' ? 'unspecified' : 'none'),
-    kind: it.kind, done: !!it.done, item: it, rel: 'all', recurring: isRecurring(it),
+    code: it.course || null, title: it.title, mode: it.mode || (it.start && it.end ? 'unspecified' : 'none'),
+    kind: it.kind, done: itemDoneOn(it, iso), item: it, rel: 'all', recurring: isRecurring(it),
   };
+}
+// Per-occurrence key for checks on repeating entries (done, attended, carpool…).
+const metaKey = (e) => (e.src === 's' ? e.id : `${e.id}@${e.occ || e.date}`);
+function itemDoneOn(it, iso = it.date) {
+  return isRecurring(it) ? !!getMeta(`${it.id}@${iso}`).done : statusOf(it) === 'done';
+}
+// Quick-complete box shown wherever a task appears.
+const doneBox = (e) => (e.src === 'i' && e.item.task
+  ? `<span class="att-box done-box ${e.done ? 'on' : ''}" role="checkbox" tabindex="0" aria-checked="${e.done}" data-done="${esc(e.id)}|${esc(e.occ || e.date)}" title="${e.done ? 'Done — click to undo' : 'Mark done'}"><span class="att-tick">✓</span><span class="att-lbl">Done</span></span>`
+  : '');
+function toggleEntryDone(key) {
+  const [id, occ] = key.split('|');
+  const it = data.items.find((i) => i.id === id);
+  if (!it) return;
+  if (isRecurring(it)) {
+    const on = !getMeta(`${id}@${occ}`).done;
+    setMeta(`${id}@${occ}`, { done: on });
+    commit();
+    if (on) toast('Nice — marked done ✓');
+  } else toggleItem(id, statusOf(it) !== 'done');
 }
 // data-open key: sessions by id; items by id plus the occurrence date (repeating events).
 const openKey = (e) => (e.src === 'i' ? `i:${e.id}|${e.occ || e.date}` : `s:${e.id}`);
@@ -471,7 +526,7 @@ function entriesOn(iso, opts) {
   const its = itemsOn(iso).map((it) => itemToEntry(it, iso));
   return [...ses, ...its];
 }
-const isTimed = (e) => e.start && e.end && (e.src === 's' || e.kind === 'event' || e.kind === 'exam');
+const isTimed = (e) => !!(e.start && e.end && (e.src === 's' || e.item));
 const isClosure = (e) => e.kind === 'closure';
 function dayClosed(iso) { return (byDate.get(iso) || []).find(isClosure); }
 function dayTag(iso) {
@@ -488,15 +543,10 @@ const modeClass = (m) => (m === 'in-person' ? 'inperson' : m === 'online' ? 'onl
 const modeLabel = (m) => (m === 'in-person' ? 'In person' : m === 'online' ? 'Online' : m === 'unspecified' ? 'Location TBA' : '');
 const modeChip = (m) => (m === 'online' || m === 'in-person' ? `<span class="chip mode ${modeClass(m)}">${m === 'online' ? ICON.online : ICON.inperson}${modeLabel(m)}</span>` : '');
 const kindChip = (e) =>
-  e.kind === 'exam' ? '<span class="chip exam">EXAM</span>' : e.kind === 'test' ? '<span class="chip test">TEST</span>' : '';
-// Categories for your own events (study blocks, prep, commutes…), each with an icon and a default colour.
-const EVENT_CATS = {
-  study: ['📚', 'Study', '#1971c2'], prep: ['📝', 'Prep', '#6741d9'], commute: ['🚌', 'Commute', '#868e96'], work: ['💼', 'Work', '#8d5524'],
-  exercise: ['🏃', 'Exercise', '#2f9e44'], appt: ['🩺', 'Appointment', '#d6336c'], social: ['🎉', 'Social', '#e8590c'], other: ['⭐', 'Other', '#1098ad'],
-};
-const catOf = (it) => (it?.cat && EVENT_CATS[it.cat] ? EVENT_CATS[it.cat] : null);
-const entryColor = (e) => (e.src === 'i' && !e.code ? e.item?.color || catOf(e.item)?.[2] || 'var(--PERSONAL)' : courseColor(e.code));
-const entryTitle = (e) => (e.src === 's' && e.code && e.title === SCHED.courses[e.code] ? COURSE_SHORT[e.code] : e.src === 'i' && catOf(e.item) ? `${catOf(e.item)[0]} ${e.title}` : e.title);
+  e.kind === 'exam' || e.item?.exam ? '<span class="chip exam">EXAM</span>' : e.kind === 'test' ? '<span class="chip test">TEST</span>' : '';
+const entryColor = (e) => (e.src === 'i' && !e.code ? e.item?.color || typeOf(e.item).color || 'var(--PERSONAL)' : courseColor(e.code));
+const itemIcon = (it) => it.icon || typeOf(it).icon;
+const entryTitle = (e) => (e.src === 's' && e.code && e.title === SCHED.courses[e.code] ? COURSE_SHORT[e.code] : e.src === 'i' ? `${itemIcon(e.item)} ${e.title}` : e.title);
 function minutesOf(e) {
   return e.start && e.end ? D.mins(e.end) - D.mins(e.start) : 0;
 }
@@ -558,7 +608,7 @@ function renderHeader() {
     html = `Week <b>${wk}</b> of ${totalWeeks} · ${Math.round(pct)}% through the term<div class="bar"><i style="width:${pct}%"></i></div>`;
   }
   $('#term-progress').innerHTML = html;
-  const open = data.items.filter((i) => statusOf(i) !== 'done' && i.kind !== 'event').length;
+  const open = data.items.filter((i) => i.task && statusOf(i) !== 'done').length;
   $('#task-count').textContent = open ? String(open) : '';
   $$('#tabs button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.view === ui.view)));
   document.body.classList.toggle('has-sidebar', ui.view === 'week' || ui.view === 'month');
@@ -651,7 +701,7 @@ function weekSummary(days) {
       if (s.kind === 'exam' || s.kind === 'test') exams++;
     }
   }
-  const due = days.reduce((a, iso) => a + itemsOn(iso).filter((i) => i.kind !== 'event' && !i.done).length, 0);
+  const due = days.reduce((a, iso) => a + itemsOn(iso).filter((i) => i.task && !itemDoneOn(i, iso)).length, 0);
   const h = (m) => `${+(m / 60).toFixed(1)} h`;
   return `<span class="muted small">${h(campus)} on campus · ${h(online)} online${exams ? ` · <b style="color:var(--danger)">${exams} exam/test</b>` : ''}${due ? ` · ${due} due` : ''}</span>`;
 }
@@ -683,11 +733,11 @@ function layoutColumns(evs) {
 function evBlockHTML(e, top, height) {
   const meta = e.src === 's' ? getMeta(e.id) : {};
   const note = ((e.src === 's' ? meta.note : e.item?.notes) || '').trim();
-  const cls = ['ev', modeClass(e.mode), e.rel === 'other' ? 'other' : '', e.kind === 'exam' || e.kind === 'test' ? e.kind : '',
+  const cls = ['ev', modeClass(e.mode), e.rel === 'other' ? 'other' : '', e.kind === 'exam' || e.kind === 'test' ? e.kind : '', e.src === 'i' && e.done ? 'is-done' : '',
     e.src === 'i' ? 'personal' : '', meta.attended ? 'attended' : ''].join(' ');
   const w = 100 / (e._lanes || 1), l = (e._lane || 0) * w;
   const mid = height >= 34;
-  const code = e.code ? codeLabel(e.code) : e.src === 'i' ? esc(catOf(e.item)?.[1] || 'Personal') : '';
+  const code = e.code ? codeLabel(e.code) : e.src === 'i' ? esc(typeOf(e.item).name) : '';
   const icon = e.mode === 'online' ? ICON.online : e.mode === 'in-person' ? ICON.inperson : '';
   const label = `${code} ${entryTitle(e)}, ${fmtRange(e.start, e.end)}, ${modeLabel(e.mode)} ${e.group ? groupLabel(e) : ''}`;
   // Fill the remaining height: group chip, then the detail line (wrapped), then the class notes.
@@ -708,16 +758,17 @@ function evBlockHTML(e, top, height) {
     ${chips ? `<div class="chips">${groupChip(e)}</div>` : ''}
     ${detailLines ? `<div class="ev-detail" style="-webkit-line-clamp:${detailLines}">${esc(detail)}</div>` : ''}
     ${noteLines >= 1 ? `<div class="ev-note" style="-webkit-line-clamp:${noteLines}">${ICON.note} ${esc(note)}</div>` : ''}
-    ${e.recurring ? '<span class="ev-rep" title="Repeating event">🔁</span>' : ''}${draggable ? '<span class="ev-resize" aria-hidden="true"></span>' : ''}${height >= 30 ? attendBox(e) : ''}${height >= 44 ? carpoolChip(e) : ''}
+    ${e.recurring ? '<span class="ev-rep" title="Repeating event">🔁</span>' : ''}${draggable ? '<span class="ev-resize" aria-hidden="true"></span>' : ''}${height >= 30 ? attendBox(e) || doneBox(e) : ''}${height >= 44 ? carpoolChip(e) : ''}
   </button>`;
 }
 
 function pillHTML(e) {
   if (isClosure(e)) return `<div class="pill closure" title="${esc(e.title)}"><span class="tx">${esc(e.title)}</span></div>`;
   const it = e.item;
-  const kindLbl = { assignment: 'Due', exam: 'Exam', reminder: '', event: '' }[it.kind] || '';
-  return `<button class="pill ${it.done ? 'done' : ''} ${it.kind}" data-open="${esc(openKey(e))}" style="--c:${entryColor(e)}" title="${esc(it.title)}">
-    <span class="box"></span><span class="tx">${kindLbl ? `<b>${kindLbl}:</b> ` : ''}${it.start ? itemTime(it) + ' ' : ''}${esc(it.title)}</span></button>`;
+  const kindLbl = it.exam ? 'Exam' : it.task ? 'Due' : '';
+  const box = it.task ? `<span class="box" role="checkbox" tabindex="0" aria-checked="${e.done}" aria-label="Mark done" data-done="${esc(e.id)}|${esc(e.occ || e.date)}"></span>` : `<span class="pill-ico">${itemIcon(it)}</span>`;
+  return `<button class="pill ${e.done ? 'done' : ''} ${it.kind}" data-open="${esc(openKey(e))}" style="--c:${entryColor(e)}" title="${esc(it.title)}">
+    ${box}<span class="tx">${kindLbl ? `<b>${kindLbl}:</b> ` : ''}${it.start ? itemTime(it) + ' ' : ''}${esc(it.title)}</span></button>`;
 }
 
 function weekNav(title, extra = '') {
@@ -897,72 +948,71 @@ function quickCreate({ date, start, end, ghost, col, px }) {
     ghost.style.height = px(end) - px(start) - 2 + 'px';
     ghost.textContent = fmtRange(D.hm(start), D.hm(end));
   }
-  let kind = 'event', cat = '';
+  let type = typesList().find((t) => t.id === 'event') || typesList()[0];
   const pop = document.createElement('div');
   pop.className = 'qc-pop card';
   pop.setAttribute('role', 'dialog');
-  pop.innerHTML = `<input type="text" class="qc-title" placeholder="Add title" aria-label="Title">
-    <div class="seg qc-kind" role="group">${[['event', 'Event'], ['assignment', 'Due date'], ['reminder', 'Reminder']].map(([k, n]) => `<button type="button" data-qk="${k}" aria-pressed="${k === kind}">${n}</button>`).join('')}</div>
-    <div class="qc-cats" role="group" aria-label="Category">${Object.entries(EVENT_CATS).map(([k, [ic, nm, c]]) => `<button type="button" class="qc-cat" data-qcat="${k}" style="--c:${c}" title="${nm}" aria-pressed="false">${ic} ${nm}</button>`).join('')}</div>
-    <div class="qc-when">${fmtDate(date, { long: true })} · <span class="qc-time">${fmtRange(D.hm(start), D.hm(end))}</span></div>
+  pop.innerHTML = `<div class="sheet-grip" aria-hidden="true"></div><input type="text" class="qc-title" placeholder="Add title" aria-label="Title">
+    <div class="qc-cats" role="group" aria-label="Type">${typesList().map((t) => `<button type="button" class="qc-cat" data-qtype="${esc(t.id)}" style="--c:${esc(t.color)}" aria-pressed="${t.id === type.id}">${t.icon} ${esc(t.name)}</button>`).join('')}</div>
+    <div class="qc-when">${fmtDate(date, { long: true })} · <span class="qc-time"></span></div>
     <select class="qc-course" aria-label="Course">${courseOptions(null)}</select>
     <div class="qc-acts"><button type="button" class="btn sm" data-qa="more">More options</button><button type="button" class="btn primary sm" data-qa="save">Save</button></div>`;
   document.body.appendChild(pop);
-  const r = ghost.getBoundingClientRect(), w = 290;
+  const r = ghost.getBoundingClientRect(), w = 300;
   const left = r.right + 10 + w < innerWidth ? r.right + 10 : Math.max(8, r.left - w - 10);
   pop.style.left = left + 'px';
   pop.style.top = clamp(r.top, 8, innerHeight - pop.offsetHeight - 8) + 'px';
   const title = $('.qc-title', pop);
+  const showTime = () => {
+    $('.qc-time', pop).textContent = type.range ? fmtRange(D.hm(start), D.hm(end)) : (type.task ? 'due ' : '') + fmtTime(D.hm(start));
+    ghost.style.setProperty('--accent', type.color);
+    title.placeholder = `${type.name} (or type a title)`;
+  };
+  showTime();
   title.focus();
   const close = () => { pop.remove(); ghost.remove(); document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', onKey, true); };
   const outside = (e) => { if (!pop.contains(e.target)) close(); };
   const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
   setTimeout(() => document.addEventListener('pointerdown', outside, true), 0);
   document.addEventListener('keydown', onKey, true);
+  swipeToClose($('.sheet-grip', pop), pop, close);
+  // The chosen type only supplies defaults; "More options" opens every setting.
   const fields = () => ({
-    kind, cat: kind === 'event' ? cat : '', title: title.value.trim() || (kind === 'event' && cat ? EVENT_CATS[cat][1] : ''), course: $('.qc-course', pop).value || null, date,
-    start: D.hm(start), end: kind === 'event' ? D.hm(end) : '',
+    type: type.id, task: !!type.task, exam: !!type.exam, track: !!type.track,
+    title: title.value.trim() || type.name, course: $('.qc-course', pop).value || null, date,
+    start: D.hm(start), end: type.range ? D.hm(end) : '',
   });
-  $$('[data-qk]', pop).forEach((b) => (b.onclick = () => {
-    kind = b.dataset.qk;
-    $$('[data-qk]', pop).forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
-    $('.qc-time', pop).textContent = kind === 'event' ? fmtRange(D.hm(start), D.hm(end)) : (kind === 'assignment' ? 'due ' : '') + fmtTime(D.hm(start));
-    $('.qc-cats', pop).classList.toggle('hidden', kind !== 'event');
-    title.focus();
-  }));
-  $$('[data-qcat]', pop).forEach((b) => (b.onclick = () => {
-    cat = cat === b.dataset.qcat ? '' : b.dataset.qcat;
-    $$('[data-qcat]', pop).forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.qcat === cat)));
-    title.placeholder = cat ? EVENT_CATS[cat][1] + ' (or type a title)' : 'Add title';
-    ghost.style.setProperty('--accent', cat ? EVENT_CATS[cat][2] : '');
+  $$('[data-qtype]', pop).forEach((b) => (b.onclick = () => {
+    type = typesList().find((t) => t.id === b.dataset.qtype) || type;
+    $$('[data-qtype]', pop).forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    showTime();
     title.focus();
   }));
   const save = () => {
     const f = fields();
-    if (!f.title) { title.focus(); toast('Add a title or pick a category'); return; }
     close();
-    const it = { id: uid('t'), ...f, mode: '', priority: 'normal', notes: '', subtasks: [], attachments: [], done: false, createdAt: Date.now(), location: '', color: '', recur: null, exdates: [] };
+    const it = migrateItem({ id: uid('t'), ...f, mode: '', priority: 'normal', notes: '', subtasks: [], attachments: [], done: false, createdAt: Date.now(), location: '', color: '', recur: null, exdates: [] });
     setStatus(it, 'not-started');
     upsert('items', it);
     commit();
-    toast(`${kindName(kind)} added`);
+    toast(`${type.icon} ${type.name} added`);
   };
   $('[data-qa="save"]', pop).onclick = save;
   title.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } });
-  $('[data-qa="more"]', pop).onclick = () => { const f = fields(); close(); openItemEditor(f); };
+  $('[data-qa="more"]', pop).onclick = () => { const f = fields(); if (!title.value.trim()) f.title = ''; close(); openItemEditor(f); };
 }
 
 function rowEvHTML(e) {
   if (isClosure(e)) return `<div class="row-ev none" style="--c:var(--PROGRAM)"><div class="tm">All day</div><div class="ti muted">${esc(e.title)}</div></div>`;
   if (e.src === 'i' && !isTimed(e)) {
     const it = e.item;
-    return `<div class="row-ev none" data-open="${esc(openKey(e))}" style="--c:${entryColor(e)}">
-      <div class="tm">${it.start ? itemTime(it) : it.kind === 'assignment' ? 'Due' : 'All day'}</div>
-      <div><div class="ti" style="${it.done ? 'text-decoration:line-through;color:var(--muted)' : ''}">${esc(it.title)}</div>
-      <div class="meta">${it.course ? `<span class="chip crs" style="--c:${entryColor(e)}">${codeLabel(it.course)}</span>` : ''}<span>${esc(kindName(it.kind))}</span>${it.done ? '<span>✓ done</span>' : ''}</div></div></div>`;
+    return `<div class="row-ev none ${it.task ? 'has-att' : ''}" data-open="${esc(openKey(e))}" style="--c:${entryColor(e)}">
+      <div class="tm">${it.start ? itemTime(it) : it.task ? 'Due' : 'All day'}</div>
+      <div><div class="ti" style="${e.done ? 'text-decoration:line-through;color:var(--muted)' : ''}">${itemIcon(it)} ${esc(it.title)}</div>
+      <div class="meta">${it.course ? `<span class="chip crs" style="--c:${entryColor(e)}">${codeLabel(it.course)}</span>` : ''}<span>${esc(typeOf(it).name)}</span>${kindChip(e)}</div></div>${doneBox(e)}</div>`;
   }
   const meta = e.src === 's' ? getMeta(e.id) : {};
-  return `<div class="row-ev ${modeClass(e.mode)} ${e.rel === 'other' ? 'other' : ''} ${e.src === 's' ? 'has-att' : ''}" data-open="${esc(openKey(e))}" style="--c:${entryColor(e)}">${attendBox(e)}
+  return `<div class="row-ev ${modeClass(e.mode)} ${e.rel === 'other' ? 'other' : ''} ${tracksAttendance(e) || e.item?.task ? 'has-att' : ''}" data-open="${esc(openKey(e))}" style="--c:${entryColor(e)}">${attendBox(e) || doneBox(e)}
     <div class="tm">${fmtRange(e.start, e.end)}</div>
     <div><div class="ti">${e.code ? `<span style="color:${entryColor(e)}">${codeLabel(e.code)}</span> ` : ''}${esc(entryTitle(e))}</div>
     <div class="meta">${modeChip(e.mode)}${carpoolChip(e)}${kindChip(e)}${groupChip(e)}${e.detail ? `<span>${esc(e.detail)}</span>` : ''}</div>
@@ -985,7 +1035,36 @@ function renderWeekList(v, header, days, today) {
 /* ================================================================== */
 /* Month view                                                          */
 /* ================================================================== */
+function renderMonthMobile(v) {
+  const first = new Date(ui.cursor.getFullYear(), ui.cursor.getMonth(), 1);
+  const gridStart = D.sow(first);
+  const last = new Date(first.getFullYear(), first.getMonth() + 1, 0);
+  const weeks = Math.ceil((D.diffDays(D.iso(gridStart), D.iso(last)) + 1) / 7);
+  const today = D.today();
+  const inMonth = (iso) => D.parse(iso).getMonth() === first.getMonth();
+  if (!ui.monthSel || !inMonth(ui.monthSel)) ui.monthSel = inMonth(today) ? today : D.iso(first);
+  let cells = DAY3.map((d) => `<div class="mm-h">${d[0]}</div>`).join('');
+  for (let i = 0; i < weeks * 7; i++) {
+    const d = D.add(gridStart, i), iso = D.iso(d);
+    const list = entriesOn(iso).filter((e) => !isClosure(e));
+    const dots = list.slice(0, 4).map((e) => `<i class="${e.src === 'i' && e.done ? 'off' : ''} ${modeClass(e.mode)}" style="--c:${entryColor(e)}"></i>`).join('');
+    cells += `<button type="button" class="mm-d ${inMonth(iso) ? '' : 'out'} ${iso === today ? 'today' : ''} ${iso === ui.monthSel ? 'sel' : ''} ${dayClosed(iso) ? 'closed' : ''}" data-msel="${iso}" aria-label="${esc(fmtDate(iso, { long: true }))}, ${list.length} item${list.length === 1 ? '' : 's'}">
+      <span class="n">${d.getDate()}</span><span class="dots">${dots}${list.length > 4 ? '<b>+</b>' : ''}</span></button>`;
+  }
+  const sel = ui.monthSel;
+  const list = entriesOn(sel).sort((a, b) => (a.start || '00:00').localeCompare(b.start || '00:00'));
+  const tag = dayTag(sel);
+  v.innerHTML = `${weekNav(`${MON[first.getMonth()]} ${first.getFullYear()}`)}
+    <div class="card mm">${cells}</div>
+    <section class="card daycard mm-day">
+      <h3>${fmtDate(sel, { long: true })} ${tag ? `<span class="daytag"><span class="chip ${tag.cls}">${tag.label}</span></span>` : ''}
+        <button class="btn sm" data-goto="${sel}">Week</button><button class="btn sm primary" data-add-date="${sel}">${ICON.plus} Add</button></h3>
+      ${list.length ? list.map(rowEvHTML).join('') : '<div class="muted small">Nothing scheduled</div>'}
+    </section>`;
+}
+
 function renderMonth(v) {
+  if (narrowMQ.matches) return renderMonthMobile(v);
   const first = new Date(ui.cursor.getFullYear(), ui.cursor.getMonth(), 1);
   const gridStart = D.sow(first);
   const last = new Date(first.getFullYear(), first.getMonth() + 1, 0);
@@ -1001,7 +1080,7 @@ function renderMonth(v) {
     const max = 5;
     const minis = shown.slice(0, max).map((e) => {
       if (e.src === 'i' && !isTimed(e)) {
-        return `<div class="mini none" style="--c:${entryColor(e)}">${e.item.done ? '☑' : '☐'} <span class="tx">${esc(e.title)}</span></div>`;
+        return `<div class="mini none ${e.done ? 'mdone' : ''}" style="--c:${entryColor(e)}">${e.item.task ? `<span class="mbox" role="checkbox" tabindex="0" aria-checked="${e.done}" data-done="${esc(e.id)}|${esc(e.occ || e.date)}">${e.done ? '☑' : '☐'}</span>` : itemIcon(e.item)} <span class="tx">${esc(e.title)}</span></div>`;
       }
       return `<div class="mini ${modeClass(e.mode)} ${e.kind === 'exam' || e.kind === 'test' ? e.kind : ''}" style="--c:${entryColor(e)};${e.rel === 'other' ? 'opacity:.5' : ''}">
         <span class="tm">${fmtTime(e.start, false)}</span> <b>${e.code ? codeLabel(e.code).replace('DH ', '') : '•'}</b> <span class="tx">${esc(e.kind === 'exam' ? 'EXAM ' : e.kind === 'test' ? 'TEST ' : '')}${esc(entryTitle(e))}</span></div>`;
@@ -1018,6 +1097,40 @@ function renderMonth(v) {
 /* ================================================================== */
 /* Agenda view                                                         */
 /* ================================================================== */
+// Collapsed agenda days are remembered on this device; "day done" syncs like other checks.
+const agendaCollapsed = new Set((() => { try { return JSON.parse(localStorage.getItem('l1s:agcol') || '[]'); } catch { return []; } })());
+// Done days start folded; agendaOpened remembers done days that were opened again by hand.
+const agendaOpened = new Set((() => { try { return JSON.parse(localStorage.getItem('l1s:agopen') || '[]'); } catch { return []; } })());
+const saveCollapsed = () => {
+  try {
+    localStorage.setItem('l1s:agcol', JSON.stringify([...agendaCollapsed].slice(-400)));
+    localStorage.setItem('l1s:agopen', JSON.stringify([...agendaOpened].slice(-400)));
+  } catch {}
+};
+const dayIsCollapsed = (iso) => agendaCollapsed.has(iso) || (!!getMeta('day:' + iso).done && !agendaOpened.has(iso));
+function setDayCollapsed(iso, on) {
+  if (on) { agendaCollapsed.add(iso); agendaOpened.delete(iso); } else { agendaCollapsed.delete(iso); agendaOpened.add(iso); }
+  saveCollapsed();
+  const sec = $(`[data-agday="${iso}"]`);
+  if (!sec) return;
+  sec.classList.toggle('collapsed', on);
+  $('.day-toggle', sec)?.setAttribute('aria-expanded', String(!on));
+}
+function toggleDayDone(iso) {
+  const on = !getMeta('day:' + iso).done;
+  setMeta('day:' + iso, { done: on });
+  commit({ rerender: false });
+  const sec = $(`[data-agday="${iso}"]`);
+  if (sec) {
+    sec.classList.toggle('day-done', on);
+    const box = $('[data-daydone]', sec);
+    box.classList.toggle('on', on);
+    box.setAttribute('aria-checked', String(on));
+    $('.dd-lbl', box).textContent = on ? 'Done' : 'Day done';
+  }
+  setDayCollapsed(iso, on); // finishing a day folds it away; un-ticking opens it again
+  if (on) toast(`${fmtDate(iso)} done ✓`);
+}
 function matchesQuery(e, q) {
   if (!q) return true;
   const hay = [e.title, e.code, codeLabel(e.code), e.detail, (e.instructors || []).join(' '), e.item?.notes, e.src === 's' ? getMeta(e.id).note : '']
@@ -1037,14 +1150,26 @@ function renderAgenda(v) {
       .filter((e) => matchesQuery(e, ui.agendaQuery))
       .sort((a, b) => (a.start || '00:00').localeCompare(b.start || '00:00'));
     if (!list.length) continue;
-    out += `<section class="card day ${iso === today ? 'today' : ''}"><h3>${fmtDate(iso, { long: true })} <span class="muted small">${relDay(iso) !== fmtDate(iso) ? relDay(iso) : ''}</span></h3>
-      ${list.map(rowEvHTML).join('')}</section>`;
+    const done = !!getMeta('day:' + iso).done;
+    const collapsed = dayIsCollapsed(iso);
+    const n = list.filter((e) => !isClosure(e)).length;
+    out += `<section class="card day ${iso === today ? 'today' : ''} ${collapsed ? 'collapsed' : ''} ${done ? 'day-done' : ''}" data-agday="${iso}">
+      <div class="day-head">
+        <button type="button" class="day-toggle" data-collapse="${iso}" aria-expanded="${!collapsed}" aria-controls="agb-${iso}">
+          <svg class="chev" viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5l6 5-6 5"/></svg>
+          <h3>${fmtDate(iso, { long: true })} <span class="muted small">${relDay(iso) !== fmtDate(iso) ? relDay(iso) : ''}</span></h3>
+          <span class="day-count">${n} item${n === 1 ? '' : 's'}</span>
+        </button>
+        <span class="att-box day-done-box ${done ? 'on' : ''}" role="checkbox" tabindex="0" aria-checked="${done}" data-daydone="${iso}" title="${done ? 'Day done — click to undo' : 'Mark this day done'}"><span class="att-tick">✓</span><span class="dd-lbl">${done ? 'Done' : 'Day done'}</span></span>
+      </div>
+      <div class="day-body" id="agb-${iso}"><div class="day-inner">${list.map(rowEvHTML).join('')}</div></div></section>`;
   }
   v.innerHTML = `<div class="toolbar">
       <h2>Agenda</h2>
       <input type="search" id="ag-q" class="wide-search" placeholder="Search classes, notes, instructors…" value="${esc(ui.agendaQuery)}">
       <select id="ag-course" aria-label="Course"><option value="">All courses</option>${Object.keys(SCHED.courses).map((c) => `<option value="${c}" ${c === ui.agendaCourse ? 'selected' : ''}>${codeLabel(c)} · ${esc(COURSE_SHORT[c])}</option>`).join('')}</select>
       <label class="check small"><input type="checkbox" id="ag-past" ${ui.agendaPast ? 'checked' : ''}> Include past</label>
+      <button class="btn sm" id="ag-fold">Collapse all</button><button class="btn sm" id="ag-unfold">Expand all</button>
       <span class="spacer"></span>
       <div class="seg" role="group" aria-label="Groups shown">
         <button data-others="hide" aria-pressed="${data.settings.others === 'hide'}">My groups</button>
@@ -1058,13 +1183,14 @@ function renderAgenda(v) {
   $('#ag-course').onchange = (e) => { ui.agendaCourse = e.target.value; renderAgenda(v); };
   $('#ag-past').onchange = (e) => { ui.agendaPast = e.target.checked; renderAgenda(v); };
   $('#ag-more').onclick = () => { ui.agendaDays += 28; renderAgenda(v); };
+  $('#ag-fold').onclick = () => $$('[data-agday]', v).forEach((sec) => setDayCollapsed(sec.dataset.agday, true));
+  $('#ag-unfold').onclick = () => $$('[data-agday]', v).forEach((sec) => setDayCollapsed(sec.dataset.agday, false));
 }
 
 /* ================================================================== */
 /* Tasks view                                                          */
 /* ================================================================== */
-const KINDS = { assignment: 'Assignment / due date', exam: 'Exam / test', event: 'Event', reminder: 'Reminder' };
-const kindName = (k) => ({ assignment: 'Assignment', exam: 'Exam / test', event: 'Event', reminder: 'Reminder' })[k] || k;
+const typeOptions = (sel) => typesList().map((t) => `<option value="${esc(t.id)}" ${t.id === sel ? 'selected' : ''}>${t.icon} ${esc(t.name)}</option>`).join('');
 
 function dueClass(it) {
   if (it.done || !it.date) return '';
@@ -1078,7 +1204,7 @@ function taskRowHTML(it) {
   return `<div class="task ${it.done ? 'done' : ''}" data-open="i:${esc(it.id)}">
     <input type="checkbox" data-toggle="${esc(it.id)}" ${it.done ? 'checked' : ''} aria-label="Mark done">
     <div><div class="ttl">${it.priority === 'high' ? '<span class="prio-high" title="High priority">!</span> ' : ''}${esc(it.title)}</div>
-      <div class="meta">${it.course ? `<span class="chip crs" style="--c:${c}">${codeLabel(it.course)}</span>` : ''}<span>${kindName(it.kind)}</span>
+      <div class="meta">${it.course ? `<span class="chip crs" style="--c:${c}">${codeLabel(it.course)}</span>` : ''}<span>${itemIcon(it)} ${esc(typeOf(it).name)}</span>
       ${subs.length ? `<span>☑ ${subDone}/${subs.length}</span>` : ''}${(it.attachments || []).length ? `<span>${ICON.clip} ${(it.attachments || []).length}</span>` : ''}
       ${it.notes ? `<span>${ICON.note}</span>` : ''}</div></div>
     <div class="due ${dueClass(it)}">${it.date ? relDay(it.date) : 'No date'}${it.start ? `<br>${itemTime(it)}` : ''}</div>
@@ -1101,8 +1227,8 @@ function gradePct(g) {
 }
 // One list of every deadline: your items plus exams/tests from the timetable.
 function deadlineRows() {
-  const rows = data.items.filter((i) => i.kind !== 'event' || i.status || i.grade).map((it) => ({
-    key: 'i:' + it.id, src: 'i', id: it.id, code: it.course, name: it.title, date: it.date, time: it.start, end: it.end, kind: it.kind,
+  const rows = data.items.filter((i) => i.task || i.exam || i.grade).map((it) => ({
+    key: 'i:' + it.id, src: 'i', id: it.id, code: it.course, name: `${itemIcon(it)} ${it.title}`, date: it.date, time: it.start, end: it.end, kind: it.kind, type: it.type,
     status: statusOf(it), grade: it.grade || '', weight: it.weight ?? '', item: it,
   }));
   if (ui.taskTimetable) {
@@ -1130,7 +1256,7 @@ function renderTasks(v) {
   const today = D.today();
   const weekEnd = D.iso(D.add(D.sow(new Date()), 6));
   const q = ui.taskQuery.toLowerCase();
-  const all = deadlineRows().filter((r) => (!ui.taskCourse || r.code === ui.taskCourse) && (!ui.taskKind || r.kind === ui.taskKind || (ui.taskKind === 'exam' && r.kind === 'test')))
+  const all = deadlineRows().filter((r) => (!ui.taskCourse || r.code === ui.taskCourse) && (!ui.taskKind || r.type === ui.taskKind || (ui.taskKind === 'exam' && r.kind === 'test')))
     .filter((r) => !q || `${r.name} ${r.code || ''} ${r.item?.notes || ''}`.toLowerCase().includes(q));
   let rows = all;
   if (ui.taskFilter === 'open') rows = rows.filter((r) => r.status !== 'done');
@@ -1154,7 +1280,7 @@ function renderTasks(v) {
     const subs = it?.subtasks || [];
     return `${divider}<tr class="${r.status === 'done' ? 'is-done' : ''} ${r.src === 's' ? 'from-tt' : ''}">
       <td class="cls">${r.code ? `<span class="chip crs" style="--c:${c}">${codeLabel(r.code)}</span><span class="cls-name">${esc(COURSE_SHORT[r.code] || '')}</span>` : '<span class="muted">—</span>'}</td>
-      <td><div class="nm"><button class="link" data-open="${r.key}">${esc(r.name)}</button>
+      <td><div class="nm">${r.src === 'i' && it.task ? doneBox(itemToEntry(it, it.date)) : ''}<button class="link" data-open="${r.key}">${esc(r.name)}</button>
         ${r.kind === 'exam' || r.kind === 'test' ? kindChip({ kind: r.kind === 'test' ? 'test' : 'exam' }) : ''}
         ${r.src === 's' ? '<span class="muted small">timetable</span>' : ''}
         ${subs.length ? `<span class="muted small">☑ ${subs.filter((x) => x.done).length}/${subs.length}</span>` : ''}
@@ -1173,7 +1299,7 @@ function renderTasks(v) {
       <h2>Deadlines</h2>
       <div class="seg" role="group" aria-label="Status">${[['all', 'All'], ['open', 'To do'], ['done', 'Done']].map(([f, n]) => `<button data-tf="${f}" aria-pressed="${ui.taskFilter === f}">${n}</button>`).join('')}</div>
       <select id="tk-course" aria-label="Course"><option value="">All courses</option>${Object.keys(SCHED.courses).map((c) => `<option value="${c}" ${c === ui.taskCourse ? 'selected' : ''}>${codeLabel(c)} · ${esc(COURSE_SHORT[c])}</option>`).join('')}</select>
-      <select id="tk-kind" aria-label="Type"><option value="">All types</option>${Object.entries(KINDS).map(([k, n]) => `<option value="${k}" ${k === ui.taskKind ? 'selected' : ''}>${n}</option>`).join('')}</select>
+      <select id="tk-kind" aria-label="Type"><option value="">All types</option>${typeOptions(ui.taskKind)}</select>
       <label class="check small"><input type="checkbox" id="tk-tt" ${ui.taskTimetable ? 'checked' : ''}> Timetable exams</label>
       <input type="search" id="tk-q" placeholder="Search…" value="${esc(ui.taskQuery)}">
       <span class="spacer"></span>
@@ -1216,7 +1342,7 @@ function renderTasks(v) {
   const add = () => {
     const name = $('#qa-name').value.trim();
     if (!name) { $('#qa-name').focus(); return; }
-    const it = { id: uid('t'), kind: 'assignment', title: name, course: $('#qa-course').value || null,
+    const it = { id: uid('t'), type: 'assignment', task: true, exam: false, kind: 'assignment', title: name, course: $('#qa-course').value || null,
       date: $('#qa-date').value || '', start: $('#qa-time').value || '', end: '', mode: '', priority: 'normal', notes: '',
       subtasks: [], attachments: [], weight: $('#qa-weight').value.trim(), grade: '', createdAt: Date.now() };
     setStatus(it, $('#qa-status').value);
@@ -1361,7 +1487,7 @@ function renderCourses(v) {
     const upcoming = ses.filter((s) => !past.includes(s));
     const next = upcoming[0];
     const nextExam = upcoming.find((s) => s.kind === 'exam' || s.kind === 'test') ||
-      data.items.filter((i) => i.kind === 'exam' && i.course === code && i.date >= today).sort((a, b) => a.date.localeCompare(b.date))[0];
+      data.items.filter((i) => i.exam && i.course === code && i.date >= today).sort((a, b) => a.date.localeCompare(b.date))[0];
     const online = ses.filter((s) => s.mode === 'online').length, inp = ses.filter((s) => s.mode === 'in-person').length;
     const hrs = ses.reduce((a, s) => a + minutesOf(s), 0) / 60;
     const instr = COURSE_INSTR[code] || [];
@@ -1404,7 +1530,7 @@ function renderCourses(v) {
   $$('[data-course-tasks]', v).forEach((b) => (b.onclick = () => { ui.taskCourse = b.dataset.courseTasks; ui.taskFilter = 'all'; setView('tasks'); }));
   $$('[data-course-notes]', v).forEach((b) => (b.onclick = () => { ui.noteCourse = b.dataset.courseNotes; ui.noteActive = null; setView('notes'); }));
   $$('[data-course-agenda]', v).forEach((b) => (b.onclick = () => { ui.agendaCourse = b.dataset.courseAgenda; setView('agenda'); }));
-  $$('[data-course-new]', v).forEach((b) => (b.onclick = () => openItemEditor({ course: b.dataset.courseNew, kind: 'assignment' })));
+  $$('[data-course-new]', v).forEach((b) => (b.onclick = () => openItemEditor({ course: b.dataset.courseNew, type: 'assignment' })));
   $('#cr-setup').onclick = () => openLevelWizard(currentLevel(), { step: 1 });
   $$('[data-course-done]', v).forEach((b) => (b.onclick = () => setCourseDone(b.dataset.courseDone, b.dataset.on === '1')));
 }
@@ -1421,10 +1547,88 @@ function openModal(html, { wide = false, color = '', onClose } = {}) {
   $$('[data-close]', root).forEach((b) => (b.onclick = () => closeModal()));
   closeModal.onClose = onClose;
   closeModal.lastFocus = document.activeElement;
+  const sheet = root.querySelector('.modal');
+  swipeToClose($('header', sheet) || sheet, sheet, () => closeModal({ instant: true }));
   setTimeout(() => (root.querySelector('[autofocus]') || root.querySelector('.modal button, .modal input'))?.focus(), 20);
   return root.querySelector('.modal');
 }
 const reducedMotionMQ = matchMedia('(prefers-reduced-motion: reduce)');
+// Phones: drag a bottom sheet down by its header (or a drawer sideways) to dismiss it.
+function swipeToClose(handle, sheet, onClose, axis = 'y') {
+  if (!handle) return;
+  let start = null, delta = 0;
+  handle.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' || !narrowMQ.matches || e.target.closest('input, select, textarea, button:not(.sheet-grip)')) return;
+    start = axis === 'y' ? e.clientY : e.clientX;
+    delta = 0;
+    sheet.style.transition = 'none';
+  });
+  handle.addEventListener('pointermove', (e) => {
+    if (start === null) return;
+    delta = Math.max(0, (axis === 'y' ? e.clientY : e.clientX) - start);
+    if (delta > 4) e.preventDefault();
+    sheet.style.transform = axis === 'y' ? `translateY(${delta}px)` : `translateX(${delta}px)`;
+  });
+  const end = () => {
+    if (start === null) return;
+    start = null;
+    sheet.style.transition = 'transform .22s var(--ease)';
+    if (delta > 90) {
+      sheet.style.transform = axis === 'y' ? 'translateY(100%)' : 'translateX(100%)';
+      setTimeout(onClose, 200);
+    } else sheet.style.transform = '';
+  };
+  handle.addEventListener('pointerup', end);
+  handle.addEventListener('pointercancel', end);
+}
+
+// Phones: a flyover menu with everything that doesn't fit in the header.
+function openMenu() {
+  if ($('.drawer-backdrop')) return;
+  const t = SCHED.term;
+  const btn = $('#levelup-btn');
+  const el = document.createElement('div');
+  el.className = 'drawer-backdrop';
+  el.innerHTML = `<aside class="drawer" role="dialog" aria-modal="true" aria-label="Menu">
+    <header class="dr-head"><div><b>Pookie&rsquo;s DH</b><div class="muted small">${esc($('#term-sub').textContent)}</div></div>
+      <button class="icon-btn dr-close" aria-label="Close menu">✕</button></header>
+    <div class="dr-prog">${$('#term-progress').innerHTML}</div>
+    <div class="dr-sec"><div class="dr-lbl">Level</div><div class="levels dr-levels">${$('#levels').innerHTML}</div></div>
+    ${t.level < MAX_LEVEL ? `<button class="${btn.className} dr-levelup" data-action="level-up"><span class="lu-ico">${$('#levelup-ico').textContent}</span><b>LEVEL UP!</b><span class="lu-count">${$('#levelup-count').textContent}</span></button>` : ''}
+    <nav class="dr-list">
+      <button data-action="new-item"><span class="dr-ico">＋</span>New calendar entry</button>
+      <button data-action="import"><span class="dr-ico">⤓</span>Import</button>
+      <button data-action="print"><span class="dr-ico">⎙</span>Print</button>
+      <button data-action="settings"><span class="dr-ico">⚙</span>Settings</button>
+      <button data-action="types"><span class="dr-ico">🏷</span>Entry types</button>
+    </nav>
+    <div class="dr-foot"><span class="${$('#sync-status').className}">${esc($('#sync-status').textContent)}</span>
+      <button class="btn sm" data-action="logout">Sign out</button></div>
+  </aside>`;
+  document.body.appendChild(el);
+  const menuBtn = $('.menu-btn');
+  menuBtn?.setAttribute('aria-expanded', 'true');
+  const drawer = $('.drawer', el);
+  const close = () => {
+    if (!el.isConnected) return;
+    menuBtn?.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('keydown', onKey, true);
+    if (reducedMotionMQ.matches) return el.remove();
+    el.classList.add('closing');
+    setTimeout(() => el.remove(), 220);
+  };
+  const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+  document.addEventListener('keydown', onKey, true);
+  el.addEventListener('click', (e) => {
+    if (e.target === el || e.target.closest('.dr-close')) return close();
+    const a = e.target.closest('[data-action],[data-level]');
+    if (!a) return;
+    if (a.dataset.action === 'types') { close(); return openTypesManager(); }
+    close(); // the document click handler runs the action itself
+  });
+  swipeToClose(drawer, drawer, () => { el.remove(); menuBtn?.setAttribute('aria-expanded', 'false'); document.removeEventListener('keydown', onKey, true); }, 'x');
+  setTimeout(() => $('.dr-close', el).focus(), 30);
+}
 function closeModal({ instant = false } = {}) {
   const root = $('#modal-root');
   if (!root.innerHTML) return;
@@ -1487,7 +1691,7 @@ function openSession(id) {
   $('#ses-note').addEventListener('input', (e) => { setMeta(id, { note: e.target.value }); changed = true; $('#ses-saved').textContent = 'Saving…'; persist(); });
   $$('[data-m]', modal).forEach((cb) => (cb.onchange = () => { setMeta(id, { [cb.dataset.m]: cb.checked }); commit({ rerender: false }); changed = true; }));
   $$('[data-toggle]', modal).forEach((cb) => (cb.onchange = () => { changed = true; toggleItem(cb.dataset.toggle, cb.checked); }));
-  $('#ses-add').onclick = () => openItemEditor({ course: s.code || null, date: s.date, kind: 'assignment' });
+  $('#ses-add').onclick = () => openItemEditor({ course: s.code || null, date: s.date, type: 'assignment' });
   if (s.periodId) $('#ses-period').onclick = () => openLevelWizard(s.level, { step: 2 });
   if (s.code) $('#ses-cnote').onclick = () => { closeModal(); ui.noteCourse = s.code; ui.noteActive = null; ui.noteMode = 'notes'; setView('notes'); };
 }
@@ -1574,53 +1778,116 @@ async function moveItem(it, occ, date, start, end) {
   commit();
 }
 
-const EVENT_COLORS = ['', '#1098ad', '#e8590c', '#2f9e44', '#6741d9', '#d6336c', '#b08900', '#495057'];
+const EVENT_COLORS = ['', '#1098ad', '#1971c2', '#6741d9', '#d6336c', '#e8590c', '#f59f00', '#2f9e44', '#495057'];
 const MAX_LOCAL_FILE = 1_000_000, MAX_CLOUD_FILE = 2_500_000;
+// Manage the user's entry types (overlay, so it can open on top of the editor).
+function openTypesManager(onDone) {
+  let types = structuredClone(typesList());
+  const el = document.createElement('div');
+  el.className = 'modal-backdrop scope-backdrop';
+  const draw = () => {
+    el.innerHTML = `<div class="modal wide types-mgr" role="dialog" aria-modal="true">
+      <header><span class="bar"></span><div style="flex:1"><h2>Entry types</h2><div class="muted small">Your own list — each type is a name, icon and colour plus the settings new entries start with. Any entry can still change every setting.</div></div></header>
+      <div class="body">
+        <div class="tm-head"><span>Icon</span><span>Name</span><span>Colour</span><span title="New entries get a done checkbox and appear in Deadlines">Task</span><span title="Highlighted as an exam or test">Exam</span><span title="Prep / Attended / Reviewed boxes like a class">Class checks</span><span title="New entries get a start and end time">Time range</span><span></span></div>
+        ${types.map((t, i) => `<div class="tm-row">
+          <input type="text" class="icon-in" data-ti="${i}" data-tf="icon" value="${esc(t.icon)}" maxlength="4" aria-label="Icon">
+          <input type="text" data-ti="${i}" data-tf="name" value="${esc(t.name)}" aria-label="Name">
+          <input type="color" data-ti="${i}" data-tf="color" value="${esc(/^#[0-9a-f]{6}$/i.test(t.color) ? t.color : '#1098ad')}" aria-label="Colour">
+          ${[['task', 'Task'], ['exam', 'Exam'], ['track', 'Class checks'], ['range', 'Time range']].map(([f, lbl]) => `<label class="tm-flag"><input type="checkbox" data-ti="${i}" data-tf="${f}" ${t[f] ? 'checked' : ''} aria-label="${lbl}"><span class="tm-fl">${lbl}</span></label>`).join('')}
+          <button type="button" class="icon-btn" data-tdel="${i}" aria-label="Remove ${esc(t.name)}">✕</button></div>`).join('')}
+        <div class="tm-acts"><button type="button" class="btn sm" data-tadd>${ICON.plus} Add type</button><button type="button" class="btn sm ghost" data-treset>Reset to the starter list</button></div>
+      </div>
+      <footer><button class="btn" data-tcancel>Cancel</button><button class="btn primary" data-tsave>Save types</button></footer></div>`;
+  };
+  draw();
+  document.body.appendChild(el);
+  const close = () => { el.remove(); document.removeEventListener('keydown', onKey, true); };
+  const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+  document.addEventListener('keydown', onKey, true);
+  el.addEventListener('input', (e) => {
+    const t = e.target;
+    if (t.dataset.ti === undefined) return;
+    const row = types[+t.dataset.ti];
+    row[t.dataset.tf] = t.type === 'checkbox' ? t.checked : t.value;
+  });
+  el.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-tadd],[data-tdel],[data-treset],[data-tsave],[data-tcancel]');
+    if (!t) return;
+    if (t.dataset.tcancel !== undefined) return close();
+    if (t.dataset.tadd !== undefined) { types.push({ id: uid('ty'), name: 'New type', icon: '⭐', color: PALETTE[types.length % PALETTE.length], range: true }); draw(); $$('[data-tf="name"]', el).at(-1).select(); return; }
+    if (t.dataset.treset !== undefined) { if (confirm('Replace your types with the starter list? Entries keep their own settings.')) { types = structuredClone(DEFAULT_TYPES); draw(); } return; }
+    if (t.dataset.tdel !== undefined) {
+      const ty = types[+t.dataset.tdel];
+      const used = data.items.filter((i) => i.type === ty.id).length;
+      if (used && !confirm(`${used} entr${used === 1 ? 'y uses' : 'ies use'} “${ty.name}”. Remove the type anyway? Those entries keep all their settings.`)) return;
+      types.splice(+t.dataset.tdel, 1);
+      return draw();
+    }
+    if (t.dataset.tsave !== undefined) {
+      types = types.filter((x) => x.name.trim()).map((x) => ({ ...x, name: x.name.trim(), icon: x.icon.trim() || '•' }));
+      if (!types.length) return toast('Keep at least one type');
+      data.settings.types = types;
+      data.settingsUpdatedAt = Date.now();
+      commit({ rerender: !$('#modal-root').innerHTML });
+      close();
+      toast('Types saved');
+      onDone?.();
+    }
+  });
+}
+
 function openItemEditor(seed = {}, { occ = null } = {}) {
   const existing = seed.id && data.items.find((i) => i.id === seed.id);
-  const it = existing ? structuredClone(existing) : {
-    id: uid('t'), kind: seed.kind || 'assignment', title: seed.title || '', course: seed.course || null,
-    date: seed.date || D.today(), start: seed.start || '', end: seed.end || '', mode: seed.mode || '', priority: 'normal',
-    notes: '', subtasks: [], attachments: [], done: false, createdAt: Date.now(), location: '', color: '', recur: null, exdates: [],
-  };
+  const seedType = typesList().find((t) => t.id === seed.type) || typesList().find((t) => t.id === 'assignment') || typesList()[0];
+  const it = existing ? migrateItem(structuredClone(existing)) : migrateItem({
+    id: uid('t'), type: seedType.id, task: seed.task ?? !!seedType.task, exam: seed.exam ?? !!seedType.exam, track: seed.track ?? !!seedType.track,
+    title: seed.title || '', course: seed.course || null, date: seed.date || D.today(), start: seed.start || '', end: seed.end || '',
+    mode: seed.mode || '', priority: 'normal', notes: '', subtasks: [], attachments: [], done: false, createdAt: Date.now(),
+    location: '', color: '', icon: '', recur: null, exdates: [],
+  });
   it.subtasks ||= [];
   it.attachments ||= [];
   const recurring = existing && isRecurring(existing);
   if (!recurring) occ = null;
   const shownDate = occ || it.date;
   const r = it.recur || { freq: 'none', interval: 1, byDay: [], until: '' };
+  const flag = (id, on, label, hint) => `<label class="switch-row"><input type="checkbox" id="${id}" ${on ? 'checked' : ''}><span class="sw-track"></span><span><b>${label}</b><span class="muted small">${hint}</span></span></label>`;
   const modal = openModal(`
-    ${modalHead(existing ? 'Edit' : 'New', recurring ? `🔁 ${esc(recurText(existing))}` : 'Assignments, due dates, events, exams and reminders show up on the timetable.')}
+    ${modalHead(existing ? 'Edit entry' : 'New calendar entry', recurring ? `🔁 ${esc(recurText(existing))}` : 'Everything is optional except the title — set it up however you like.')}
     <form class="body" id="it-form" autocomplete="off">
-      <div class="seg" role="group" aria-label="Type" style="justify-self:start">${Object.keys(KINDS).map((k) => `<button type="button" data-kind="${k}" aria-pressed="${it.kind === k}">${kindName(k)}</button>`).join('')}</div>
-      <label class="field">Title<input type="text" id="it-title" required value="${esc(it.title)}" placeholder="e.g. Case study write-up" autofocus></label>
+      <div class="field"><span class="form-label">Type</span><div class="qc-cats type-chips" id="it-types"></div></div>
+      <div class="title-row"><input type="text" id="it-icon" class="icon-in" maxlength="4" value="${esc(it.icon || '')}" placeholder="${esc(typeOf(it).icon)}" aria-label="Icon (emoji)" title="Icon — leave empty to use the type's">
+        <input type="text" id="it-title" required value="${esc(it.title)}" placeholder="Title" aria-label="Title" autofocus></div>
       <div class="grid-2">
         <label class="field">Course<select id="it-course">${courseOptions(it.course)}</select></label>
-        <label class="field">Priority<select id="it-prio"><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option></select></label>
+        <div class="field"><span class="form-label">Colour</span><div class="swatches">${EVENT_COLORS.map((c) => `<button type="button" class="sw-btn ${c === (it.color || '') ? 'on' : ''}" data-color="${c}" style="--c:${c || 'var(--line)'}" aria-label="${c ? 'Colour ' + c : 'Use the type or course colour'}">${c ? '' : '↺'}</button>`).join('')}<input type="color" id="it-color-custom" value="${esc(/^#[0-9a-f]{6}$/i.test(it.color || '') ? it.color : '#1098ad')}" aria-label="Custom colour" title="Custom colour"></div></div>
       </div>
-      <div class="field" id="it-cat-wrap"><span class="form-label">Category</span><div class="qc-cats">${Object.entries(EVENT_CATS).map(([k, [ic, nm, c]]) => `<button type="button" class="qc-cat" data-ecat="${k}" style="--c:${c}" aria-pressed="${it.cat === k}">${ic} ${nm}</button>`).join('')}</div></div>
-      <div class="field hidden" id="it-color-wrap"><span class="form-label">Colour</span><div class="swatches">${EVENT_COLORS.map((c) => `<button type="button" class="sw-btn ${c === (it.color || '') ? 'on' : ''}" data-color="${c}" style="--c:${c || 'var(--PERSONAL)'}" aria-label="${c ? 'Colour ' + c : 'Default colour'}"></button>`).join('')}</div></div>
-      <div class="grid-3">
-        <label class="field"><span id="it-date-lbl">Date</span><input type="date" id="it-date" value="${esc(shownDate || '')}"></label>
-        <label class="field" id="it-start-wrap"><span id="it-start-lbl">Time (optional)</span><input type="time" id="it-start" value="${esc(it.start || '')}"></label>
-        <label class="field" id="it-end-wrap"><span id="it-end-lbl">End time</span><input type="time" id="it-end" value="${esc(it.end || '')}"></label>
-      </div>
-      <div class="inline-checks">
-        <label class="check small" id="it-allday-wrap"><input type="checkbox" id="it-allday" ${(it.kind === 'event' || it.kind === 'reminder') && existing && !it.start ? 'checked' : ''}> All day</label>
-        <label class="check small" id="it-frame-wrap"><input type="checkbox" id="it-frame" ${it.end && it.kind !== 'event' && it.kind !== 'exam' ? 'checked' : ''}> Make it a time frame (from – to) instead of a single time</label>
-      </div>
-      <div class="repeat-box" id="it-repeat-wrap">
-        <label class="field">Repeat<select id="it-freq">
-          <option value="none">Does not repeat</option><option value="daily">Daily</option><option value="weekdays">Every weekday (Mon–Fri)</option>
-          <option value="weekly">Weekly</option><option value="monthly">Monthly (same date)</option></select></label>
-        <label class="field" id="it-int-wrap">Every<span class="int-row"><input type="number" id="it-int" min="1" max="12" value="${+r.interval || 1}"><span id="it-int-unit">week(s)</span></span></label>
-        <div class="field" id="it-days-wrap"><span class="form-label">On</span><div class="day-toggles">${DAY3.map((d, i) => `<button type="button" class="day-tg" data-dow="${i}" aria-pressed="false" title="${DAY[i]}">${d[0]}</button>`).join('')}</div></div>
-        <label class="field" id="it-until-wrap">Ends<input type="date" id="it-until" value="${esc(r.until || '')}" title="Leave empty to repeat with no end date"></label>
-      </div>
-      <div class="grid-2" id="it-where-wrap">
-        <label class="field">Where <span class="muted">(in person → 🚗 carpool tag)</span><select id="it-mode"><option value="">Not specified</option><option value="in-person">In person</option><option value="online">Online</option></select></label>
-        <label class="field">Location / link<input type="text" id="it-loc" value="${esc(it.location || '')}" placeholder="Room 204, Zoom link…"></label>
-      </div>
+      <section class="ed-sec"><h3>When</h3>
+        <div class="grid-3">
+          <label class="field">Date<input type="date" id="it-date" value="${esc(shownDate || '')}"></label>
+          <label class="field" id="it-start-wrap"><span id="it-start-lbl">Start / due time</span><input type="time" id="it-start" value="${esc(it.start || '')}"></label>
+          <label class="field" id="it-end-wrap">End<input type="time" id="it-end" value="${esc(it.end || '')}"></label>
+        </div>
+        <label class="check small"><input type="checkbox" id="it-allday" ${existing && !it.start ? 'checked' : ''}> All day</label>
+        <div class="repeat-box" id="it-repeat-wrap">
+          <label class="field">Repeat<select id="it-freq">
+            <option value="none">Does not repeat</option><option value="daily">Daily</option><option value="weekdays">Every weekday (Mon–Fri)</option>
+            <option value="weekly">Weekly</option><option value="monthly">Monthly (same date)</option></select></label>
+          <label class="field" id="it-int-wrap">Every<span class="int-row"><input type="number" id="it-int" min="1" max="12" value="${+r.interval || 1}"><span id="it-int-unit">week(s)</span></span></label>
+          <div class="field" id="it-days-wrap"><span class="form-label">On</span><div class="day-toggles">${DAY3.map((d, i) => `<button type="button" class="day-tg" data-dow="${i}" aria-pressed="false" title="${DAY[i]}">${d[0]}</button>`).join('')}</div></div>
+          <label class="field" id="it-until-wrap">Ends<input type="date" id="it-until" value="${esc(r.until || '')}" title="Leave empty to repeat with no end date"></label>
+        </div>
+      </section>
+      <section class="ed-sec"><h3>How it behaves</h3>
+        ${flag('it-task', it.task, 'Task', 'A tick-off box wherever it shows, and listed under Deadlines with status, grade and weight')}
+        ${flag('it-exam', it.exam, 'Exam / test', 'Highlighted with an EXAM badge and counted as an exam for its course')}
+        ${flag('it-track', it.track, 'Class checks', 'Prepared / Attended / Reviewed boxes, like a class')}
+        <div class="grid-2">
+          <label class="field">Where <span class="muted">(in person → 🚗 carpool tag)</span><select id="it-mode"><option value="">Not specified</option><option value="in-person">In person</option><option value="online">Online</option></select></label>
+          <label class="field">Location / link<input type="text" id="it-loc" value="${esc(it.location || '')}" placeholder="Room 204, Zoom link…"></label>
+        </div>
+      </section>
       <label class="field">Notes<textarea id="it-notes" placeholder="Instructions, links, page numbers…">${esc(it.notes || '')}</textarea></label>
       <div class="form-section"><div class="form-label">Checklist</div>
         <div class="subtasks" id="it-subs"></div>
@@ -1629,8 +1896,9 @@ function openItemEditor(seed = {}, { occ = null } = {}) {
         <div class="attach-list" id="it-files"></div>
         <label class="dropzone" id="it-drop">Drop files here or <u>browse</u><input type="file" id="it-file" multiple hidden></label>
         <div class="muted small">${sync.cloud ? 'Files up to 2.5 MB, saved to the cloud.' : 'Cloud sync is off: files up to 1 MB are kept on this device only.'}</div></div>
-      <div class="grid-3">
+      <div class="grid-2" id="it-task-wrap">
         <label class="field">Status<select id="it-status">${Object.entries(STATUS).map(([k, n]) => `<option value="${k}" ${k === statusOf(it) ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+        <label class="field">Priority<select id="it-prio"><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option></select></label>
         <label class="field">Grade<input type="text" id="it-grade" value="${esc(it.grade || '')}" placeholder="e.g. 85% or 17/20"></label>
         <label class="field">Weight (% of course)<input type="text" id="it-weight" inputmode="decimal" value="${esc(it.weight ?? '')}" placeholder="e.g. 10"></label>
       </div>
@@ -1639,65 +1907,68 @@ function openItemEditor(seed = {}, { occ = null } = {}) {
       ${existing ? `<button class="btn danger left" id="it-del">${ICON.trash} Delete</button><button class="btn" id="it-dup">Duplicate</button>` : ''}
       <button class="btn" data-close>Cancel</button>
       <button class="btn primary" id="it-save">Save</button>
-    </footer>`, { color: it.course ? courseColor(it.course) : it.color || 'var(--PERSONAL)' });
+    </footer>`, { color: it.course ? courseColor(it.course) : it.color || typeOf(it).color });
 
   $('#it-prio').value = it.priority || 'normal';
   $('#it-mode').value = it.mode || '';
   $('#it-freq').value = r.freq || 'none';
   let byDay = r.byDay?.length ? [...r.byDay] : [D.parse(shownDate || D.today()).getDay()];
   let color = it.color || '';
-  let cat = it.cat || '';
-  $$('[data-ecat]', modal).forEach((b) => (b.onclick = () => {
-    cat = cat === b.dataset.ecat ? '' : b.dataset.ecat;
-    $$('[data-ecat]', modal).forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.ecat === cat)));
-    if (!$('#it-title').value.trim() && cat) $('#it-title').value = EVENT_CATS[cat][1];
-    if (!color && !$('#it-course').value) modal.style.setProperty('--c', cat ? EVENT_CATS[cat][2] : 'var(--PERSONAL)');
-  }));
-  const syncKind = () => {
-    $$('[data-kind]', modal).forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.kind === it.kind)));
-    const ev = it.kind === 'event' || it.kind === 'exam';
-    const canAllDay = it.kind === 'event' || it.kind === 'reminder';
-    const allDay = canAllDay && $('#it-allday').checked;
-    const frame = !ev && $('#it-frame').checked;
-    const repeats = it.kind !== 'assignment';
+  let typeId = it.type;
+  const curType = () => typesList().find((t) => t.id === typeId) || typeOf({ type: typeId });
+  const tint = () => modal.style.setProperty('--c', $('#it-course').value ? courseColor($('#it-course').value) : color || curType().color);
+  const drawTypes = () => {
+    $('#it-types').innerHTML = typesList().map((t) => `<button type="button" class="qc-cat" data-etype="${esc(t.id)}" style="--c:${esc(t.color)}" aria-pressed="${t.id === typeId}">${t.icon} ${esc(t.name)}</button>`).join('')
+      + `<button type="button" class="qc-cat add" id="it-types-manage">✎ Manage types</button>`;
+    $$('[data-etype]', modal).forEach((b) => (b.onclick = () => {
+      typeId = b.dataset.etype;
+      const t = curType();
+      // A new entry takes the type's starting behaviour; an existing one keeps its own settings.
+      if (!existing) {
+        $('#it-task').checked = !!t.task; $('#it-exam').checked = !!t.exam; $('#it-track').checked = !!t.track;
+        if (!t.range) $('#it-end').value = '';
+      }
+      $('#it-icon').placeholder = t.icon;
+      drawTypes(); tint(); sync_();
+    }));
+    $('#it-types-manage').onclick = () => openTypesManager(() => { drawTypes(); tint(); });
+  };
+  const sync_ = () => {
+    const allDay = $('#it-allday').checked;
+    const task = $('#it-task').checked;
     const freq = $('#it-freq').value;
-    $('#it-allday-wrap').classList.toggle('hidden', !canAllDay);
-    $('#it-frame-wrap').classList.toggle('hidden', ev || allDay);
     $('#it-start-wrap').classList.toggle('hidden', allDay);
-    $('#it-end-wrap').classList.toggle('hidden', allDay || (!ev && !frame));
-    $('#it-where-wrap').classList.toggle('hidden', !ev);
-    $('#it-cat-wrap').classList.toggle('hidden', it.kind !== 'event');
-    $('#it-repeat-wrap').classList.toggle('hidden', !repeats);
+    $('#it-end-wrap').classList.toggle('hidden', allDay);
+    $('#it-start-lbl').textContent = task && !$('#it-end').value ? 'Due time (optional)' : 'Start (optional)';
     $('#it-int-wrap').classList.toggle('hidden', !['daily', 'weekly', 'monthly'].includes(freq));
     $('#it-int-unit').textContent = { daily: 'day(s)', weekly: 'week(s)', monthly: 'month(s)' }[freq] || '';
     $('#it-days-wrap').classList.toggle('hidden', freq !== 'weekly');
     $('#it-until-wrap').classList.toggle('hidden', freq === 'none');
-    $('#it-color-wrap').classList.toggle('hidden', !!$('#it-course').value);
+    $('#it-task-wrap').classList.toggle('hidden', !task && !$('#it-exam').checked);
     $$('.day-tg', modal).forEach((b) => b.setAttribute('aria-pressed', String(byDay.includes(+b.dataset.dow))));
-    $('#it-date-lbl').textContent = it.kind === 'assignment' ? 'Due date' : 'Date';
-    $('#it-start-lbl').textContent = ev ? 'Start time' : frame ? (it.kind === 'assignment' ? 'Due from' : 'From') : it.kind === 'assignment' ? 'Due time (optional)' : 'Time (optional)';
-    $('#it-end-lbl').textContent = ev ? 'End time' : it.kind === 'assignment' ? 'Due by' : 'To';
   };
-  $('#it-frame').onchange = () => { syncKind(); if ($('#it-frame').checked) ($('#it-start').value ? $('#it-end') : $('#it-start')).focus(); };
-  ['#it-allday', '#it-freq'].forEach((sel) => ($(sel).onchange = syncKind));
-  $$('[data-kind]', modal).forEach((b) => (b.onclick = () => { it.kind = b.dataset.kind; syncKind(); }));
+  drawTypes();
+  ['#it-allday', '#it-freq', '#it-task', '#it-exam', '#it-track'].forEach((sel) => ($(sel).onchange = sync_));
+  $('#it-end').oninput = sync_;
   $$('.day-tg', modal).forEach((b) => (b.onclick = () => {
     const d = +b.dataset.dow;
     byDay = byDay.includes(d) ? (byDay.length > 1 ? byDay.filter((x) => x !== d) : byDay) : [...byDay, d];
-    syncKind();
+    sync_();
   }));
-  $$('[data-color]', modal).forEach((b) => (b.onclick = () => {
-    color = b.dataset.color;
-    $$('[data-color]', modal).forEach((x) => x.classList.toggle('on', x === b));
-    modal.style.setProperty('--c', color || 'var(--PERSONAL)');
-  }));
-  syncKind();
-  $('#it-course').onchange = (e) => { modal.style.setProperty('--c', e.target.value ? courseColor(e.target.value) : color || 'var(--PERSONAL)'); syncKind(); };
+  const pickColor = (c, btn) => {
+    color = c;
+    $$('[data-color]', modal).forEach((x) => x.classList.toggle('on', x === btn));
+    tint();
+  };
+  $$('[data-color]', modal).forEach((b) => (b.onclick = () => pickColor(b.dataset.color, b)));
+  $('#it-color-custom').oninput = (e) => pickColor(e.target.value, null);
+  $('#it-course').onchange = tint;
+  sync_();
 
   const drawSubs = () => {
-    $('#it-subs').innerHTML = it.subtasks.map((s, i) => `<div class="subtask">
-      <input type="checkbox" data-si="${i}" ${s.done ? 'checked' : ''} aria-label="Done">
-      <input type="text" data-st="${i}" value="${esc(s.text)}" placeholder="Step">
+    $('#it-subs').innerHTML = it.subtasks.map((x, i) => `<div class="subtask">
+      <input type="checkbox" data-si="${i}" ${x.done ? 'checked' : ''} aria-label="Done">
+      <input type="text" data-st="${i}" value="${esc(x.text)}" placeholder="Step">
       <button type="button" class="icon-btn" data-sd="${i}" aria-label="Remove">${ICON.x.replace('<svg', '<svg style="width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2"')}</button></div>`).join('');
     $$('[data-si]', modal).forEach((c) => (c.onchange = () => (it.subtasks[c.dataset.si].done = c.checked)));
     $$('[data-st]', modal).forEach((c) => (c.oninput = () => (it.subtasks[c.dataset.st].text = c.value)));
@@ -1740,22 +2011,24 @@ function openItemEditor(seed = {}, { occ = null } = {}) {
     const ed = structuredClone(it);
     ed.title = $('#it-title').value.trim();
     if (!ed.title) { $('#it-title').focus(); toast('Add a title'); return null; }
+    ed.type = typeId;
+    ed.icon = $('#it-icon').value.trim();
     ed.course = $('#it-course').value || null;
-    ed.color = ed.course ? '' : color;
-    ed.cat = ed.kind === 'event' ? cat : '';
+    ed.color = color;
     ed.priority = $('#it-prio').value;
     ed.date = $('#it-date').value || '';
-    const ev = ed.kind === 'event' || ed.kind === 'exam';
-    const allDay = (ed.kind === 'event' || ed.kind === 'reminder') && $('#it-allday').checked;
-    const frame = !ev && $('#it-frame').checked;
+    const allDay = $('#it-allday').checked;
     ed.start = allDay ? '' : $('#it-start').value || '';
-    ed.end = (ev || frame) && ed.start ? $('#it-end').value || '' : '';
-    if (frame && ed.end && ed.end <= ed.start) { $('#it-end').focus(); toast('The end time must be after the start time'); return null; }
-    if (ev && ed.start && (!ed.end || ed.end <= ed.start)) ed.end = D.hm(Math.min(D.mins(ed.start) + 60, 1439));
-    ed.mode = ev ? $('#it-mode').value : '';
-    ed.location = ev ? $('#it-loc').value.trim() : '';
-    const freq = ed.kind === 'assignment' ? 'none' : $('#it-freq').value;
-    if (freq !== 'none' && !ed.date) { $('#it-date').focus(); toast('A repeating event needs a start date'); return null; }
+    ed.end = allDay || !ed.start ? '' : $('#it-end').value || '';
+    if (ed.end && ed.end <= ed.start) { $('#it-end').focus(); toast('The end time must be after the start time'); return null; }
+    ed.task = $('#it-task').checked;
+    ed.exam = $('#it-exam').checked;
+    ed.track = $('#it-track').checked;
+    ed.kind = deriveKind(ed);
+    ed.mode = $('#it-mode').value;
+    ed.location = $('#it-loc').value.trim();
+    const freq = $('#it-freq').value;
+    if (freq !== 'none' && !ed.date) { $('#it-date').focus(); toast('A repeating entry needs a start date'); return null; }
     const until = $('#it-until').value;
     if (freq !== 'none' && until && until < ed.date) { $('#it-until').focus(); toast('The end date is before the first date'); return null; }
     ed.recur = freq === 'none' ? null : { freq, interval: clamp(+$('#it-int').value || 1, 1, 52), byDay: freq === 'weekly' ? byDay.slice().sort() : [], until };
@@ -1771,7 +2044,7 @@ function openItemEditor(seed = {}, { occ = null } = {}) {
     const ed = collect();
     if (!ed) return;
     if (recurring && occ) {
-      const scope = await chooseScope('Edit repeating event');
+      const scope = await chooseScope('Edit repeating entry');
       if (!scope) return;
       applySeriesEdit(existing, ed, occ, scope);
     } else upsert('items', ed);
@@ -1779,7 +2052,7 @@ function openItemEditor(seed = {}, { occ = null } = {}) {
     if (existing) deleteItemFiles({ ...existing, attachments: (existing.attachments || []).filter((f) => !ed.attachments.some((x) => x.id === f.id)) });
     closeModal();
     commit();
-    toast(existing ? 'Saved' : `${kindName(ed.kind)} added`);
+    toast(existing ? 'Saved' : `${itemIcon(ed)} ${typeOf(ed).name} added`);
   };
   $('#it-save').onclick = save;
   $('#it-form').onsubmit = (e) => { e.preventDefault(); save(); };
@@ -1836,6 +2109,8 @@ function openSettings() {
         <label class="field">When on<span class="cp-set"><input type="color" id="st-cp-oncolor" value="${esc(carpoolCfg().onColor)}" aria-label="Colour when on"><input type="text" id="st-cp-ontext" value="${esc(carpoolCfg().onText)}" maxlength="24"></span></label>
         <label class="field">When off<span class="cp-set"><input type="color" id="st-cp-offcolor" value="${esc(carpoolCfg().offColor)}" aria-label="Colour when off"><input type="text" id="st-cp-offtext" value="${esc(carpoolCfg().offText)}" maxlength="24"></span></label>
       </div>
+      <div class="section-title" style="margin:6px 0 0">Entry types</div>
+      <div class="type-preview">${typesList().map((t) => `<span class="qc-cat" style="--c:${esc(t.color)}">${t.icon} ${esc(t.name)}</span>`).join('')}<button type="button" class="btn sm" id="st-types">✎ Manage types</button></div>
       <label class="check small"><input type="checkbox" id="st-fun" ${st.fun !== false ? 'checked' : ''}> Hearts & stars burst out of some clicks ♥★</label>
       <div class="section-title" style="margin:6px 0 0">Levels</div>
       <div class="card level-list">${[...Array(MAX_LEVEL)].map((_, i) => {
@@ -1873,6 +2148,7 @@ function openSettings() {
     commit();
   };
   ['#st-cp-oncolor', '#st-cp-offcolor', '#st-cp-ontext', '#st-cp-offtext'].forEach((sel) => ($(sel).onchange = saveCarpool));
+  $('#st-types').onclick = () => openTypesManager(() => openSettings());
   $('#st-fun').onchange = (e) => { data.settings.fun = e.target.checked; data.settingsUpdatedAt = Date.now(); commit({ rerender: false }); if (e.target.checked) burst(innerWidth / 2, innerHeight / 2); };
   $$('[data-edit-level]', modal).forEach((b) => (b.onclick = () => openLevelWizard(+b.dataset.editLevel)));
   $$('[data-level]', modal).forEach((b) => b.addEventListener('click', () => closeModal()));
@@ -2053,7 +2329,7 @@ function openImport() {
           $('#im-go').disabled = false;
           return;
         }
-        rows = (Array.isArray(j) ? j : j.events || []).map((r) => ({ title: r.title || r.name, date: r.date, start: r.start || r.time || '', end: r.end || '', kind: KINDS[r.kind || r.type] ? r.kind || r.type : guessKind(r.title || ''), course: guessCourse(r.course || r.title), notes: r.notes || r.description || '' }))
+        rows = (Array.isArray(j) ? j : j.events || []).map((r) => ({ title: r.title || r.name, date: r.date, start: r.start || r.time || '', end: r.end || '', kind: typesList().some((t) => t.id === (r.type || r.kind)) ? r.type || r.kind : guessKind(r.title || ''), course: guessCourse(r.course || r.title), notes: r.notes || r.description || '' }))
           .filter((r) => r.title && /^\d{4}-\d{2}-\d{2}$/.test(r.date));
       } else if (/BEGIN:VCALENDAR/.test(text)) rows = parseICS(text);
       else rows = parseCSV(text);
@@ -2065,7 +2341,7 @@ function openImport() {
     $('#im-preview').innerHTML = rows.length ? `<div class="toolbar" style="margin:0"><b>${rows.length} found</b><span class="spacer"></span><label class="check small"><input type="checkbox" id="im-all" checked> Select all</label></div>
       <div class="preview-list">${rows.map((r, i) => `<label><input type="checkbox" data-ri="${i}" checked>
         <span style="min-width:96px" class="muted">${fmtDate(r.date)}${r.start ? ' ' + fmtTime(r.start) : ''}</span>
-        <select data-rk="${i}" style="width:auto;min-height:26px;padding:2px 6px">${Object.keys(KINDS).map((k) => `<option value="${k}" ${k === r.kind ? 'selected' : ''}>${kindName(k)}</option>`).join('')}</select>
+        <select data-rk="${i}" style="width:auto;min-height:26px;padding:2px 6px">${typeOptions(r.kind)}</select>
         ${r.course ? `<span class="chip crs" style="--c:${courseColor(r.course)}">${codeLabel(r.course)}</span>` : ''}<span>${esc(r.title)}</span></label>`).join('')}</div>`
       : '<div class="note-hint">No events with a title and date were found in that file.</div>';
     $('#im-go').disabled = !rows.length;
@@ -2089,10 +2365,11 @@ function openImport() {
     }
     const picked = $$('[data-ri]', modal).filter((c) => c.checked).map((c) => rows[c.dataset.ri]);
     for (const r of picked) {
-      const timed = (r.kind === 'event' || r.kind === 'exam') && r.start;
+      const tp = typesList().find((t) => t.id === r.kind) || typesList().find((t) => t.id === 'event') || typesList()[0];
+      const timed = !!(tp.range && r.start);
       const end = timed ? (r.end > r.start ? r.end : D.hm(Math.min(D.mins(r.start) + 60, 1439))) : '';
-      upsert('items', { id: uid('t'), kind: r.kind, title: r.title.slice(0, 300), course: r.course || null, date: r.date, start: r.start || '',
-        end, mode: r.mode || '', priority: 'normal', notes: r.notes || '', subtasks: [], attachments: [], done: false, createdAt: Date.now() });
+      upsert('items', migrateItem({ id: uid('t'), type: tp.id, task: !!tp.task, exam: !!tp.exam, track: !!tp.track, title: r.title.slice(0, 300), course: r.course || null, date: r.date, start: r.start || '',
+        end, mode: r.mode || '', priority: 'normal', notes: r.notes || '', subtasks: [], attachments: [], done: false, createdAt: Date.now() }));
     }
     closeModal();
     commit();
@@ -2220,7 +2497,7 @@ function buildPrint(from, to, opts) {
     e.detail && e.kind !== 'exam' && e.kind !== 'test' ? e.detail : ''].filter(Boolean).join(' · ');
   const sundayEmpty = weeks.every((w) => !entries(w[0]).length);
   const cols = [...Array(7)].map((_, i) => (i === 0 && sundayEmpty ? '.42fr' : '1fr')).join(' ');
-  const isExam = (e) => e.kind === 'exam' || e.kind === 'test';
+  const isExam = (e) => e.kind === 'exam' || e.kind === 'test' || !!e.item?.exam;
   const st = data.settings;
 
   const pageHead = (title, sub) => `<div class="p-head"><h3>${esc(SCHED.term.program)} <span>· Level ${SCHED.term.level || 1} of ${SCHED.term.levels || 4} · ${title}</span></h3><div>${sub}</div></div>`;
@@ -2245,7 +2522,7 @@ function buildPrint(from, to, opts) {
     let times = '';
     for (let m = lo; m <= hi; m += 60) times += `<span style="top:${px(m)}mm">${fmtTime(D.hm(m), false)}</span>`;
     // Due dates and all-day items get their own row under the day headers (never covering classes).
-    const pillsFor = (iso) => entries(iso).filter((e) => !isTimed(e) && !isClosure(e)).map((e) => `<div class="${e.item?.done ? 'pdone' : ''}">${e.item?.done ? '☑' : '☐'} ${e.item?.kind === 'assignment' ? '<b>Due</b> ' : ''}${e.start ? itemTime(e.item) + ' ' : ''}${esc(e.title)}</div>`).join('');
+    const pillsFor = (iso) => entries(iso).filter((e) => !isTimed(e) && !isClosure(e)).map((e) => `<div class="${e.done ? 'pdone' : ''}">${e.item?.task ? (e.done ? '☑' : '☐') : itemIcon(e.item)} ${e.item?.task && !e.item?.exam ? '<b>Due</b> ' : ''}${e.start ? itemTime(e.item) + ' ' : ''}${esc(e.title)}</div>`).join('');
     const pillRow = days.map(pillsFor);
     const alldayHTML = pillRow.some(Boolean) ? `<div class="pad-lbl">Due</div>${pillRow.map((h) => `<div class="pad">${h}</div>`).join('')}` : '';
     const pcols = days.map((iso) => {
@@ -2255,12 +2532,12 @@ function buildPrint(from, to, opts) {
         ${layoutColumns(dl.filter(isTimed)).map((e) => {
           const w = 100 / (e._lanes || 1), l = (e._lane || 0) * w, h = px(D.mins(e.end)) - px(D.mins(e.start));
           const n = noteOf(e);
-          const m = e.src === 's' ? getMeta(e.id) : null;
+          const m = tracksAttendance(e) ? getMeta(metaKey(e)) : null;
           const box = (on) => (on ? '☑' : '☐');
           // Classes: Prep/Att/Rev boxes (ticked if done on the site); your events: one done box.
           const checks = m ? `<div class="pck">${box(m.prepared)} Prep ${box(m.attended)} Att ${box(m.reviewed)} Rev</div>` : '';
-          const lead = e.src === 'i' ? `${box(e.item.done)} ` : !checks || h <= rowMM * 3 ? `${box(m?.attended)} ` : '';
-          return `<div class="pev ${modeClass(e.mode)} ${isExam(e) ? 'exam' : ''} ${e.src === 'i' && e.item.done ? 'pdone' : ''}" style="--c:${entryColor(e)};top:${px(D.mins(e.start))}mm;height:${h - 0.3}mm;left:${l}%;width:calc(${w}% - .4mm);${e.rel === 'other' ? 'opacity:.55' : ''}">
+          const lead = e.src === 'i' && e.item.task ? `${box(e.done)} ` : m && (!checks || h <= rowMM * 3) ? `${box(m.attended)} ` : '';
+          return `<div class="pev ${modeClass(e.mode)} ${isExam(e) ? 'exam' : ''} ${e.src === 'i' && e.done ? 'pdone' : ''}" style="--c:${entryColor(e)};top:${px(D.mins(e.start))}mm;height:${h - 0.3}mm;left:${l}%;width:calc(${w}% - .4mm);${e.rel === 'other' ? 'opacity:.55' : ''}">
             <b>${lead}${esc(short(e))}${n && h <= rowMM * 5.5 ? ' ✎' : ''}</b>${h > rowMM * 2 ? `<span class="pm">${fmtRange(e.start, e.end)}</span>` : ''}${h > rowMM * 3 ? `<div class="pm">${esc(extra(e))}</div>` : ''}${h > rowMM * 3 ? checks : ''}${n && h > rowMM * 5.5 ? `<div class="pn">✎ ${esc(clip(n, 140))}</div>` : ''}</div>`;
         }).join('')}</div>`;
     }).join('');
@@ -2582,15 +2859,21 @@ function navigate(dir) {
 
 document.addEventListener('click', (e) => {
   if (e.target.matches('[data-toggle]')) return;
+  const ddEl = e.target.closest('[data-daydone]');
+  if (ddEl) { e.preventDefault(); return toggleDayDone(ddEl.dataset.daydone); }
+  const colEl = e.target.closest('[data-collapse]');
+  if (colEl) { e.preventDefault(); return setDayCollapsed(colEl.dataset.collapse, !dayIsCollapsed(colEl.dataset.collapse)); }
+  const doneEl = e.target.closest('[data-done]');
+  if (doneEl) { e.preventDefault(); e.stopPropagation(); return toggleEntryDone(doneEl.dataset.done); }
   const cpEl = e.target.closest('[data-carpool]');
   if (cpEl) { e.preventDefault(); e.stopPropagation(); return toggleCarpool(cpEl.dataset.carpool); }
   const att = e.target.closest('[data-attend]');
   if (att) { e.preventDefault(); e.stopPropagation(); return toggleAttended(att.dataset.attend); }
-  const t = e.target.closest('[data-action],[data-nav],[data-open],[data-add-date],[data-goto],[data-view],[data-level],[data-others],[data-courses-all],[data-legend]');
+  const t = e.target.closest('[data-action],[data-nav],[data-open],[data-add-date],[data-msel],[data-goto],[data-view],[data-level],[data-others],[data-courses-all],[data-legend]');
   if (!t) return;
   if (t.dataset.view) return setView(t.dataset.view);
   if (t.dataset.level) return switchLevel(+t.dataset.level);
-  if (t.dataset.addDate) return openItemEditor({ date: t.dataset.addDate, kind: 'event' });
+  if (t.dataset.addDate) return openItemEditor({ date: t.dataset.addDate, type: 'event' });
   if (t.dataset.nav !== undefined) return navigate(+t.dataset.nav);
   if (t.dataset.legend) {
     legendCollapsed = t.dataset.legend === 'close';
@@ -2599,6 +2882,7 @@ document.addEventListener('click', (e) => {
   }
   if (t.dataset.coursesAll) return setHiddenCourses(t.dataset.coursesAll === 'hide' ? Object.keys(SCHED.courses) : []);
   if (t.dataset.others) { data.settings.others = t.dataset.others; data.settingsUpdatedAt = Date.now(); return commit(); }
+  if (t.dataset.msel) { ui.monthSel = t.dataset.msel; return render(); }
   if (t.dataset.goto) { ui.cursor = D.parse(t.dataset.goto); return setView('week'); }
   if (t.dataset.open) {
     if (Date.now() < suppressClickUntil) return; // the pointer just finished dragging an event
@@ -2615,6 +2899,7 @@ document.addEventListener('click', (e) => {
   else if (a === 'print') openPrint();
   else if (a === 'settings') openSettings();
   else if (a === 'import') openImport();
+  else if (a === 'menu') openMenu();
   else if (a === 'logout') fetch('/api/logout', { method: 'POST' }).finally(() => location.replace('/login'));
 });
 document.addEventListener('change', (e) => {
@@ -2640,6 +2925,8 @@ function pickDefaultDate() {
 
 document.addEventListener('keydown', (e) => {
   if ((e.key === ' ' || e.key === 'Enter') && e.target.matches?.('[data-attend]')) { e.preventDefault(); return toggleAttended(e.target.dataset.attend); }
+  if ((e.key === ' ' || e.key === 'Enter') && e.target.matches?.('[data-daydone]')) { e.preventDefault(); return toggleDayDone(e.target.dataset.daydone); }
+  if ((e.key === ' ' || e.key === 'Enter') && e.target.matches?.('[data-done]')) { e.preventDefault(); return toggleEntryDone(e.target.dataset.done); }
   if ((e.key === ' ' || e.key === 'Enter') && e.target.matches?.('[data-carpool]')) { e.preventDefault(); return toggleCarpool(e.target.dataset.carpool); }
   if (e.key === 'Escape') return closeModal();
   if ($('#modal-root').innerHTML || e.target.closest('input, textarea, select, [contenteditable]') || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -2651,7 +2938,7 @@ document.addEventListener('keydown', (e) => {
   else if (k === 'p') openPrint();
   else if ('123456'.includes(k)) setView(['week', 'month', 'agenda', 'tasks', 'notes', 'courses'][+k - 1]);
 });
-narrowMQ.addEventListener('change', () => ui.view === 'week' && render());
+narrowMQ.addEventListener('change', () => (ui.view === 'week' || ui.view === 'month') && render());
 // Pick up edits made on another device when coming back to the tab.
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState === 'visible' && sync.cloud && !sync.inflight && !$('#modal-root').innerHTML && ui.view !== 'notes') {
@@ -2680,7 +2967,7 @@ function seedDeadlines() {
   STARTER_DEADLINES.forEach(([course, title, date, start, status], i) => {
     const id = `t_seed_${String(i + 1).padStart(2, '0')}`;
     if (data.deleted[id] || data.items.some((x) => x.id === id)) return;
-    data.items.push({ id, kind: 'assignment', title, course, date, start, end: '', mode: '', priority: 'normal', notes: '', subtasks: [],
+    data.items.push({ id, type: 'assignment', task: true, exam: false, kind: 'assignment', title, course, date, start, end: '', mode: '', priority: 'normal', notes: '', subtasks: [],
       attachments: [], status, done: status === 'done', grade: '', weight: '', createdAt: 1, updatedAt: 1 });
     added++;
   });
