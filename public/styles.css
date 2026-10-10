@@ -814,10 +814,6 @@ input, select, textarea {
 .tk-gh::-webkit-details-marker { display: none; }
 .tk-n { font-size: 11px; background: var(--line); color: var(--text); border-radius: 9px; padding: 0 7px; letter-spacing: 0; }
 .tk-group.is-over .tk-gh { color: var(--danger); }
-.tk-donegrp > summary { cursor: pointer; padding: 6px 0; }
-.tk-donegrp > summary::after { content: "Show"; margin-left: auto; text-transform: none; letter-spacing: 0; color: var(--accent); font-weight: 600; }
-.tk-donegrp[open] > summary::after { content: "Hide"; }
-.tk-donegrp[open] { display: grid; gap: 6px; }
 .tk { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 4px; padding: 8px 10px 8px 4px; background: var(--card);
       border: 1px solid var(--line); border-left: 4px solid var(--c); border-radius: 14px; cursor: pointer; box-shadow: var(--shadow);
       transition: opacity .25s var(--ease), transform .25s var(--ease), background-color .2s var(--ease); -webkit-tap-highlight-color: transparent; }
@@ -841,6 +837,37 @@ input, select, textarea {
          background: var(--line-2); color: var(--muted); }
 .tk-st.st-in-progress { background: color-mix(in srgb, var(--warn) 18%, var(--card)); color: var(--warn); }
 .tk-st.st-done { background: color-mix(in srgb, var(--ok) 16%, var(--card)); color: var(--ok); }
+
+/* ---------- Notes on phones ---------- */
+.nm-seg { grid-template-columns: 1fr 1fr; }
+.nm-courses { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 0 -12px 12px; padding: 2px 12px; }
+.nm-courses::-webkit-scrollbar { display: none; }
+.nm-courses .tk-chip { flex: none; border-color: var(--line); background: var(--card); color: var(--text); }
+.nm-courses .tk-chip[style] { border-color: color-mix(in srgb, var(--c) 45%, var(--line)); }
+.nm-courses .tk-chip.on { background: var(--c, var(--accent)); border-color: var(--c, var(--accent)); color: #fff; }
+.nm-list { display: grid; gap: 8px; margin-bottom: 14px; }
+.nm-card { display: grid; gap: 4px; text-align: left; width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-left: 4px solid var(--c);
+           border-radius: 14px; background: var(--card); box-shadow: var(--shadow); font: inherit; color: var(--text); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.nm-card:active { background: var(--card-2); transform: scale(.99); }
+.nm-ct { font-weight: 700; font-size: 15px; display: flex; gap: 6px; align-items: center; overflow-wrap: anywhere; }
+.nm-pinned { font-size: 12px; }
+.nm-cp { font-size: 13px; color: var(--muted); line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line; }
+.nm-cm { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--faint); }
+.nm-empty { display: grid; gap: 14px; justify-items: center; }
+.nm-edit { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.nm-bar { display: flex; align-items: center; gap: 6px; position: sticky; top: 0; z-index: 3; background: var(--bg); padding: 6px 0; margin: -6px 0 0; }
+.nm-bar #ne-saved { margin-left: auto; margin-right: 4px; }
+.nm-back { height: 40px; padding: 0 10px 0 2px; font-size: 16px; font-weight: 600; color: var(--accent); gap: 2px; }
+.nm-back svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.nm-bar .btn.icon { width: 40px; height: 40px; border-radius: 12px; }
+.nm-pin { cursor: pointer; filter: grayscale(1); opacity: .55; }
+.nm-pin.on { filter: none; opacity: 1; border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
+.nm-title { font-size: 22px; font-weight: 800; border: 0; background: transparent; padding: 4px 2px; min-height: 0; }
+.nm-title:focus { outline: none; }
+.nm-course { width: auto; justify-self: start; max-width: 100%; min-height: 34px; font-size: 14px; border-radius: 17px; padding: 4px 30px 4px 12px;
+             border-color: color-mix(in srgb, var(--c) 50%, var(--line)); }
+.nm-body { min-height: calc(100dvh - 300px); font-size: 16px; line-height: 1.55; border-radius: 14px; padding: 12px 14px; resize: none; }
+body.note-editing .fab { display: none !important; }
 
 /* ---------- Responsive ---------- */
 @media (max-width: 1000px) {

@@ -66,8 +66,11 @@ A password-protected timetable and school-year tracker for the dental hygiene pr
 - **Deadlines on phones** are a card list grouped into *Overdue*, *Today*, *Tomorrow*, *Later this week*, *Next week* and then by month,
   with a large tick circle on each card (the card slides away when ticked) and a status pill you tap to cycle *To do → Doing → Done*.
   *To do / All / Done* sits under the title, the totals fit on one line, search hides behind 🔍, and course, type and timetable-exam
-  filters open in a bottom sheet (active ones show as removable chips). Done items fold into a *Done* section at the end. Tap a card for
+  filters open in a bottom sheet (active ones show as removable chips). In *All*, finished items stay in their date group, struck through (past ones under *Earlier*). Tap a card for
   grade, weight, notes and the rest.
+- **Notes on phones** open as a list of cards (pinned first, with a two-line preview, course and when it was last edited), a
+  swipeable row of course chips, and search behind 🔍. Tapping a note opens a full-screen editor with a *‹ Notes* back button,
+  📌 pin, delete and a course picker; the floating button hides while you write.
 - **Made for phones.** Below 760 px wide the views move to a bottom tab bar, the header shrinks to the logo and a ☰ menu, and
   the menu slides in from the side with LEVEL UP!, the level switcher, Import, Print, Settings, Entry types and Sign out.
   Dialogs open as bottom sheets with the Save button always in reach (drag the handle down to dismiss), and the Month view becomes

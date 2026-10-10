@@ -635,6 +635,8 @@ function render() {
 
 function setView(view) {
   if (view !== ui.view) ui.anim = 'view-enter';
+  if (view !== 'notes') document.body.classList.remove('note-editing');
+  else if (view === ui.view && narrowMQ.matches) ui.noteActive = null; // tapping Notes again goes back to the list
   ui.view = view;
   try { localStorage.setItem('l1s:view', view); } catch {}
   render();
@@ -1290,7 +1292,9 @@ function setRowStatus(key, st, el) {
     if (st === 'done') toast('Nice — marked done ✓');
   };
   // Let the card tick and slide away before the list re-sorts.
-  if (card && st === 'done' && !reducedMotionMQ.matches) { card.classList.add('ticking'); setTimeout(finish, 260); } else finish();
+  // Only slide it away when it is about to leave the current list (To do → done, Done → not done).
+  const leaving = (ui.taskFilter === 'open' && st === 'done') || (ui.taskFilter === 'done' && st !== 'done');
+  if (card && leaving && !reducedMotionMQ.matches) { card.classList.add('ticking'); setTimeout(finish, 260); } else finish();
 }
 function openTaskFilters(v) {
   openModal(`${modalHead('Filter deadlines')}
@@ -1310,9 +1314,8 @@ function renderTasksMobile(v, { all, rows, open, overdue, weekDue, doneCount, pc
   const tomorrow = D.iso(D.add(D.parse(today), 1));
   const nextEnd = D.iso(D.add(D.parse(weekEnd), 7));
   const group = (r) => {
-    if (r.status === 'done' && ui.taskFilter !== 'done') return ['done', 'Done'];
     if (!r.date) return ['nodate', 'No date'];
-    if (r.status !== 'done' && r.date < today) return ['overdue', 'Overdue'];
+    if (r.date < today) return r.status === 'done' ? ['past', 'Earlier'] : ['overdue', 'Overdue'];
     if (r.date === today) return ['today', 'Today'];
     if (r.date === tomorrow) return ['tomorrow', 'Tomorrow'];
     if (r.date > today && r.date <= weekEnd) return ['week', 'Later this week'];
@@ -1327,8 +1330,8 @@ function renderTasksMobile(v, { all, rows, open, overdue, weekDue, doneCount, pc
     if (!groups.has(k)) groups.set(k, { label, rows: [] });
     groups.get(k).rows.push(r);
   }
-  // Done items go last (folded) and overdue first.
-  const order = [...groups.keys()].sort((a, b) => (a === 'overdue' ? -1 : b === 'overdue' ? 1 : a === 'done' ? 1 : b === 'done' ? -1 : a === 'nodate' ? 1 : b === 'nodate' ? -1 : 0));
+  // Overdue first, undated last; finished items stay in their date group (struck through).
+  const order = [...groups.keys()].sort((a, b) => (a === 'overdue' ? -1 : b === 'overdue' ? 1 : a === 'nodate' ? 1 : b === 'nodate' ? -1 : 0));
   const card = (r) => {
     const it = r.item, done = r.status === 'done';
     const over = !done && r.date && r.date < today;
@@ -1373,9 +1376,7 @@ function renderTasksMobile(v, { all, rows, open, overdue, weekDue, doneCount, pc
       const g = groups.get(k);
       const head = `<span>${g.label}</span><span class="tk-n">${g.rows.length}</span>`;
       const inner = g.rows.map(card).join('');
-      return k === 'done' && ui.taskFilter === 'all'
-        ? `<details class="tk-group tk-donegrp"><summary class="tk-gh">${head}</summary>${inner}</details>`
-        : `<section class="tk-group ${k === 'overdue' ? 'is-over' : ''}"><h3 class="tk-gh">${head}</h3>${inner}</section>`;
+      return `<section class="tk-group ${k === 'overdue' ? 'is-over' : ''}"><h3 class="tk-gh">${head}</h3>${inner}</section>`;
     }).join('') : `<div class="card empty">${all.length ? (ui.taskFilter === 'open' ? 'All caught up 🎉' : 'Nothing matches these filters.') : 'No deadlines yet — tap the button below to add one.'}</div>`}`;
 
   $$('[data-tf]', v).forEach((b) => (b.onclick = () => { ui.taskFilter = b.dataset.tf; renderTasks(v); }));
@@ -1513,6 +1514,8 @@ function renderNotes(v) {
   list = list.filter((n) => (!ui.noteCourse || n.course === ui.noteCourse) && (!q || `${n.title} ${n.body}`.toLowerCase().includes(q)));
   list.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (b.updatedAt || 0) - (a.updatedAt || 0));
   const active = !isSession && data.notes.find((n) => n.id === ui.noteActive);
+  document.body.classList.toggle('note-editing', !!(active && narrowMQ.matches));
+  if (narrowMQ.matches) return renderNotesMobile(v, { list, isSession, active });
 
   v.innerHTML = `<div class="toolbar">
       <h2>Notes</h2>
@@ -1553,10 +1556,13 @@ function renderNotes(v) {
     renderNotes(v);
     if (narrowMQ.matches) $('#nt-editor').scrollIntoView({ behavior: 'smooth' });
   }));
-  if (active) {
+  if (active) bindNoteEditor(active);
+}
+function bindNoteEditor(active) {
+  {
     const persist = debounce(() => { commit({ rerender: false }); const el = $('#ne-saved'); if (el) el.textContent = 'Saved'; }, 400);
     const dirty = () => {
-      Object.assign(active, { title: $('#ne-title').value, body: $('#ne-body').value, course: $('#ne-course').value || null, pinned: $('#ne-pin').checked });
+      Object.assign(active, { title: $('#ne-title').value, body: $('#ne-body').value, course: $('#ne-course').value || null, pinned: $('#ne-pin').checked, updatedAt: Date.now() });
       upsert('notes', active);
       $('#ne-saved').textContent = 'Saving…';
       persist();
@@ -1569,6 +1575,7 @@ function renderNotes(v) {
     };
     ['#ne-title', '#ne-body'].forEach((s) => $(s).addEventListener('input', dirty));
     ['#ne-course', '#ne-pin'].forEach((s) => $(s).addEventListener('change', dirty));
+    $('#ne-pin').addEventListener('change', () => $('#ne-pin').closest('.nm-pin')?.classList.toggle('on', $('#ne-pin').checked));
     $('#ne-del').onclick = () => {
       if (!confirm('Delete this note?')) return;
       remove('notes', active.id);
@@ -1576,6 +1583,69 @@ function renderNotes(v) {
       commit();
     };
   }
+}
+// "5 min ago", "Yesterday", "Oct 3"
+function agoText(ts) {
+  if (!ts) return '';
+  const m = Math.round((Date.now() - ts) / 60000);
+  if (m < 1) return 'Just now';
+  if (m < 60) return `${m} min ago`;
+  if (m < 60 * 24 && new Date(ts).getDate() === new Date().getDate()) return new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return relDay(D.iso(new Date(ts)));
+}
+// Phones: a list of note cards, and a full-screen editor with a back button.
+function renderNotesMobile(v, { list, isSession, active }) {
+  if (active) {
+    v.innerHTML = `<div class="nm-edit" style="--c:${active.course ? courseColor(active.course) : 'var(--accent)'}">
+      <div class="nm-bar">
+        <button class="btn ghost nm-back" id="nm-back" aria-label="Back to notes"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4.5L7 10l5.5 5.5"/></svg>Notes</button>
+        <span class="muted small" id="ne-saved">Saved</span>
+        <label class="btn icon nm-pin ${active.pinned ? 'on' : ''}" title="Pin to top"><input type="checkbox" id="ne-pin" ${active.pinned ? 'checked' : ''} hidden>📌</label>
+        <button class="btn icon danger" id="ne-del" aria-label="Delete note">${ICON.trash}</button>
+      </div>
+      <input class="nm-title" id="ne-title" value="${esc(active.title)}" placeholder="Title" aria-label="Title">
+      <select id="ne-course" class="nm-course" aria-label="Course">${courseOptions(active.course)}</select>
+      <textarea id="ne-body" class="nm-body" placeholder="Write anything — lecture notes, questions for the instructor, study plan…">${esc(active.body)}</textarea>
+    </div>`;
+    $('#nm-back').onclick = () => { ui.noteActive = null; ui.anim = 'nav-prev'; render(); };
+    bindNoteEditor(active);
+    return;
+  }
+  const searchOpen = ui.noteSearchOpen || !!ui.noteQuery;
+  const card = (n) => `<button type="button" class="nm-card" data-note="${esc(n.id)}" data-session="${n.session ? 1 : ''}" style="--c:${n.course ? courseColor(n.course) : 'var(--line)'}">
+      <span class="nm-ct">${n.pinned ? '<span class="nm-pinned">📌</span>' : ''}${esc(n.title || 'Untitled')}</span>
+      <span class="nm-cp">${esc((n.body || '').slice(0, 160)) || '<i>Empty</i>'}</span>
+      <span class="nm-cm">${n.course ? `<span class="chip crs" style="--c:${courseColor(n.course)}">${codeLabel(n.course)}</span>` : ''}<span>${agoText(n.updatedAt || n.createdAt)}</span></span>
+    </button>`;
+  const pinned = list.filter((n) => n.pinned), rest = list.filter((n) => !n.pinned);
+  v.innerHTML = `<div class="tk-head">
+      <h2>Notes</h2>
+      <button class="btn icon tk-icon ${searchOpen ? 'on' : ''}" id="nm-search-btn" aria-label="Search" aria-expanded="${searchOpen}"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5"/><path d="M12.3 12.3l4.2 4.2"/></svg></button>
+      ${isSession ? '' : `<button class="btn primary tk-icon" id="nt-new" aria-label="New note"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg></button>`}
+    </div>
+    ${searchOpen ? `<input type="search" id="nt-q" class="tk-search" placeholder="Search notes…" value="${esc(ui.noteQuery)}">` : ''}
+    <div class="seg tk-seg nm-seg" role="group"><button data-nm="notes" aria-pressed="${!isSession}">My notes</button><button data-nm="session" aria-pressed="${isSession}">Class notes</button></div>
+    <div class="nm-courses" role="group" aria-label="Course">
+      <button class="tk-chip ${ui.noteCourse ? '' : 'on'}" data-ncourse="">All</button>
+      ${Object.keys(SCHED.courses).map((c) => `<button class="tk-chip ${c === ui.noteCourse ? 'on' : ''}" data-ncourse="${c}" style="--c:${courseColor(c)}">${codeLabel(c)}</button>`).join('')}
+    </div>
+    ${list.length ? `${pinned.length ? `<h3 class="tk-gh">Pinned <span class="tk-n">${pinned.length}</span></h3><div class="nm-list">${pinned.map(card).join('')}</div>` : ''}
+      ${rest.length ? `${pinned.length ? `<h3 class="tk-gh">Notes <span class="tk-n">${rest.length}</span></h3>` : ''}<div class="nm-list">${rest.map(card).join('')}</div>` : ''}`
+      : `<div class="card empty nm-empty">${isSession ? 'Notes you write on a class (tap any class in the timetable) show up here.' : ui.noteQuery || ui.noteCourse ? 'No notes match.' : `No notes yet.<br><button class="btn primary" id="nt-new2">${ICON.plus}<span>Write your first note</span></button>`}</div>`}`;
+  $$('[data-nm]', v).forEach((b) => (b.onclick = () => { ui.noteMode = b.dataset.nm; ui.noteActive = null; renderNotes(v); }));
+  $$('[data-ncourse]', v).forEach((b) => (b.onclick = () => { ui.noteCourse = b.dataset.ncourse; renderNotes(v); }));
+  $('#nm-search-btn').onclick = () => { ui.noteSearchOpen = !searchOpen; if (searchOpen) ui.noteQuery = ''; renderNotes(v); $('#nt-q')?.focus(); };
+  const qi = $('#nt-q');
+  qi?.addEventListener('input', debounce(() => { ui.noteQuery = qi.value; renderNotes(v); const n = $('#nt-q'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }, 250));
+  for (const id of ['#nt-new', '#nt-new2']) { const b = $(id, v); if (b) b.onclick = () => newNote(ui.noteCourse); }
+  $$('.nm-card', v).forEach((el) => (el.onclick = () => {
+    if (el.dataset.session) return openSession(el.dataset.note);
+    ui.noteActive = el.dataset.note;
+    ui.anim = 'nav-next';
+    render();
+    scrollTo(0, 0);
+  }));
+  $('.nm-courses .on', v)?.scrollIntoView({ inline: 'center', block: 'nearest' });
 }
 function newNote(course = '', title = '') {
   const n = { id: uid('n'), title: title || 'New note', course: course || null, body: '', pinned: false, createdAt: Date.now() };
@@ -3123,7 +3193,7 @@ document.addEventListener('keydown', (e) => {
   else if (k === 'p') openPrint();
   else if ('123456'.includes(k)) setView(['week', 'month', 'agenda', 'tasks', 'notes', 'courses'][+k - 1]);
 });
-narrowMQ.addEventListener('change', () => ['week', 'month', 'tasks'].includes(ui.view) && render());
+narrowMQ.addEventListener('change', () => ['week', 'month', 'tasks', 'notes'].includes(ui.view) && render());
 // Pick up edits made on another device when coming back to the tab.
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState === 'visible' && sync.cloud && !sync.inflight && !$('#modal-root').innerHTML && ui.view !== 'notes') {
