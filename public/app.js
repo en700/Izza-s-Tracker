@@ -954,17 +954,44 @@ function quickCreate({ date, start, end, ghost, col, px }) {
   pop.setAttribute('role', 'dialog');
   pop.innerHTML = `<div class="sheet-grip" aria-hidden="true"></div><input type="text" class="qc-title" placeholder="Add title" aria-label="Title">
     <div class="qc-cats" role="group" aria-label="Type">${typesList().map((t) => `<button type="button" class="qc-cat" data-qtype="${esc(t.id)}" style="--c:${esc(t.color)}" aria-pressed="${t.id === type.id}">${t.icon} ${esc(t.name)}</button>`).join('')}</div>
-    <div class="qc-when">${fmtDate(date, { long: true })} · <span class="qc-time"></span></div>
-    <select class="qc-course" aria-label="Course">${courseOptions(null)}</select>
+    <div class="qc-when"><input type="date" class="qc-date" value="${date}" aria-label="Date">
+      <input type="time" class="qc-start" aria-label="Start time"><span class="qc-dash">–</span><input type="time" class="qc-end" aria-label="End time"></div>
+    <div class="qc-row"><select class="qc-course" aria-label="Course">${courseOptions(null)}</select>
+      <select class="qc-mode" aria-label="Where"><option value="">Where?</option><option value="in-person">In person</option><option value="online">Online</option></select></div>
+    <label class="check small qc-task"><input type="checkbox" class="qc-taskbox"> Task — show a tick-off box and list it under Deadlines</label>
     <div class="qc-acts"><button type="button" class="btn sm" data-qa="more">More options</button><button type="button" class="btn primary sm" data-qa="save">Save</button></div>`;
   document.body.appendChild(pop);
-  const r = ghost.getBoundingClientRect(), w = 300;
+  const r = ghost.getBoundingClientRect(), w = pop.offsetWidth || 420;
   const left = r.right + 10 + w < innerWidth ? r.right + 10 : Math.max(8, r.left - w - 10);
   pop.style.left = left + 'px';
   pop.style.top = clamp(r.top, 8, innerHeight - pop.offsetHeight - 8) + 'px';
   const title = $('.qc-title', pop);
+  const toMin = (v) => { const [h, m] = v.split(':').map(Number); return h * 60 + m; };
+  $('.qc-start', pop).value = D.hm(start);
+  $('.qc-end', pop).value = D.hm(end);
+  const redrawGhost = () => {
+    ghost.style.top = px(start) + 'px';
+    ghost.style.height = Math.max(8, px(type.range ? end : start + 30) - px(start) - 2) + 'px';
+    ghost.textContent = type.range ? fmtRange(D.hm(start), D.hm(end)) : fmtTime(D.hm(start));
+  };
+  $('.qc-start', pop).onchange = (e) => {
+    if (!e.target.value) return;
+    const len = end - start;
+    start = toMin(e.target.value);
+    end = Math.min(start + len, 24 * 60 - 1);
+    $('.qc-end', pop).value = D.hm(end);
+    redrawGhost();
+  };
+  $('.qc-end', pop).onchange = (e) => {
+    if (!e.target.value) return;
+    end = Math.max(toMin(e.target.value), start + 5);
+    e.target.value = D.hm(end);
+    redrawGhost();
+  };
   const showTime = () => {
-    $('.qc-time', pop).textContent = type.range ? fmtRange(D.hm(start), D.hm(end)) : (type.task ? 'due ' : '') + fmtTime(D.hm(start));
+    pop.classList.toggle('no-end', !type.range);
+    $('.qc-taskbox', pop).checked = !!type.task;
+    redrawGhost();
     ghost.style.setProperty('--accent', type.color);
     title.placeholder = `${type.name} (or type a title)`;
   };
@@ -978,9 +1005,9 @@ function quickCreate({ date, start, end, ghost, col, px }) {
   swipeToClose($('.sheet-grip', pop), pop, close);
   // The chosen type only supplies defaults; "More options" opens every setting.
   const fields = () => ({
-    type: type.id, task: !!type.task, exam: !!type.exam, track: !!type.track,
-    title: title.value.trim() || type.name, course: $('.qc-course', pop).value || null, date,
-    start: D.hm(start), end: type.range ? D.hm(end) : '',
+    type: type.id, task: $('.qc-taskbox', pop).checked, exam: !!type.exam, track: !!type.track,
+    title: title.value.trim() || type.name, course: $('.qc-course', pop).value || null, date: $('.qc-date', pop).value || date,
+    start: D.hm(start), end: type.range ? D.hm(end) : '', mode: $('.qc-mode', pop).value,
   });
   $$('[data-qtype]', pop).forEach((b) => (b.onclick = () => {
     type = typesList().find((t) => t.id === b.dataset.qtype) || type;
@@ -991,7 +1018,7 @@ function quickCreate({ date, start, end, ghost, col, px }) {
   const save = () => {
     const f = fields();
     close();
-    const it = migrateItem({ id: uid('t'), ...f, mode: '', priority: 'normal', notes: '', subtasks: [], attachments: [], done: false, createdAt: Date.now(), location: '', color: '', recur: null, exdates: [] });
+    const it = migrateItem({ id: uid('t'), ...f, priority: 'normal', notes: '', subtasks: [], attachments: [], done: false, createdAt: Date.now(), location: '', color: '', recur: null, exdates: [] });
     setStatus(it, 'not-started');
     upsert('items', it);
     commit();
@@ -1538,10 +1565,10 @@ function renderCourses(v) {
 /* ================================================================== */
 /* Modals                                                              */
 /* ================================================================== */
-function openModal(html, { wide = false, color = '', onClose } = {}) {
+function openModal(html, { wide = false, cls = '', color = '', onClose } = {}) {
   closeModal({ instant: true });
   const root = $('#modal-root');
-  root.innerHTML = `<div class="modal-backdrop"><div class="modal ${wide ? 'wide' : ''}" role="dialog" aria-modal="true" style="${color ? `--c:${color}` : ''}">${html}</div></div>`;
+  root.innerHTML = `<div class="modal-backdrop"><div class="modal ${wide ? 'wide' : ''} ${cls}" role="dialog" aria-modal="true" style="${color ? `--c:${color}` : ''}">${html}</div></div>`;
   const back = root.firstElementChild;
   back.addEventListener('mousedown', (e) => { if (e.target === back) closeModal(); });
   $$('[data-close]', root).forEach((b) => (b.onclick = () => closeModal()));
@@ -1855,14 +1882,11 @@ function openItemEditor(seed = {}, { occ = null } = {}) {
   const flag = (id, on, label, hint) => `<label class="switch-row"><input type="checkbox" id="${id}" ${on ? 'checked' : ''}><span class="sw-track"></span><span><b>${label}</b><span class="muted small">${hint}</span></span></label>`;
   const modal = openModal(`
     ${modalHead(existing ? 'Edit entry' : 'New calendar entry', recurring ? `🔁 ${esc(recurText(existing))}` : 'Everything is optional except the title — set it up however you like.')}
-    <form class="body" id="it-form" autocomplete="off">
+    <form class="body ed-body" id="it-form" autocomplete="off">
+      <div class="ed-main">
       <div class="field"><span class="form-label">Type</span><div class="qc-cats type-chips" id="it-types"></div></div>
       <div class="title-row"><input type="text" id="it-icon" class="icon-in" maxlength="4" value="${esc(it.icon || '')}" placeholder="${esc(typeOf(it).icon)}" aria-label="Icon (emoji)" title="Icon — leave empty to use the type's">
         <input type="text" id="it-title" required value="${esc(it.title)}" placeholder="Title" aria-label="Title" autofocus></div>
-      <div class="grid-2">
-        <label class="field">Course<select id="it-course">${courseOptions(it.course)}</select></label>
-        <div class="field"><span class="form-label">Colour</span><div class="swatches">${EVENT_COLORS.map((c) => `<button type="button" class="sw-btn ${c === (it.color || '') ? 'on' : ''}" data-color="${c}" style="--c:${c || 'var(--line)'}" aria-label="${c ? 'Colour ' + c : 'Use the type or course colour'}">${c ? '' : '↺'}</button>`).join('')}<input type="color" id="it-color-custom" value="${esc(/^#[0-9a-f]{6}$/i.test(it.color || '') ? it.color : '#1098ad')}" aria-label="Custom colour" title="Custom colour"></div></div>
-      </div>
       <section class="ed-sec"><h3>When</h3>
         <div class="grid-3">
           <label class="field">Date<input type="date" id="it-date" value="${esc(shownDate || '')}"></label>
@@ -1888,6 +1912,12 @@ function openItemEditor(seed = {}, { occ = null } = {}) {
           <label class="field">Location / link<input type="text" id="it-loc" value="${esc(it.location || '')}" placeholder="Room 204, Zoom link…"></label>
         </div>
       </section>
+      </div>
+      <div class="ed-side">
+      <div class="ed-look">
+        <label class="field">Course<select id="it-course">${courseOptions(it.course)}</select></label>
+        <div class="field"><span class="form-label">Colour</span><div class="swatches">${EVENT_COLORS.map((c) => `<button type="button" class="sw-btn ${c === (it.color || '') ? 'on' : ''}" data-color="${c}" style="--c:${c || 'var(--line)'}" aria-label="${c ? 'Colour ' + c : 'Use the type or course colour'}">${c ? '' : '↺'}</button>`).join('')}<input type="color" id="it-color-custom" value="${esc(/^#[0-9a-f]{6}$/i.test(it.color || '') ? it.color : '#1098ad')}" aria-label="Custom colour" title="Custom colour"></div></div>
+      </div>
       <label class="field">Notes<textarea id="it-notes" placeholder="Instructions, links, page numbers…">${esc(it.notes || '')}</textarea></label>
       <div class="form-section"><div class="form-label">Checklist</div>
         <div class="subtasks" id="it-subs"></div>
@@ -1902,12 +1932,13 @@ function openItemEditor(seed = {}, { occ = null } = {}) {
         <label class="field">Grade<input type="text" id="it-grade" value="${esc(it.grade || '')}" placeholder="e.g. 85% or 17/20"></label>
         <label class="field">Weight (% of course)<input type="text" id="it-weight" inputmode="decimal" value="${esc(it.weight ?? '')}" placeholder="e.g. 10"></label>
       </div>
+      </div>
     </form>
     <footer>
       ${existing ? `<button class="btn danger left" id="it-del">${ICON.trash} Delete</button><button class="btn" id="it-dup">Duplicate</button>` : ''}
       <button class="btn" data-close>Cancel</button>
       <button class="btn primary" id="it-save">Save</button>
-    </footer>`, { color: it.course ? courseColor(it.course) : it.color || typeOf(it).color });
+    </footer>`, { wide: true, cls: 'editor', color: it.course ? courseColor(it.course) : it.color || typeOf(it).color });
 
   $('#it-prio').value = it.priority || 'normal';
   $('#it-mode').value = it.mode || '';
@@ -2962,6 +2993,49 @@ const STARTER_DEADLINES = [
   ['L1O', 'Student Handbook Quiz', '2026-10-12', '', 'not-started'],
   ['DH107', 'Indiana Plagiarism Test', '2026-10-16', '', 'not-started'],
 ];
+// Due dates from Brightspace (7 pages of the Upcoming list, Oct 2026 intake). Same rules as above:
+// fixed ids, added once, and anything edited or deleted on any device stays that way.
+// [course, title, date, time, points, weight %, exam?, notes]
+const BRIGHTSPACE_DEADLINES = [
+  ['DH107', 'Plagiarism Homework', '2026-10-16', '23:59'],
+  ['DH110', 'SMART GOALS Quiz', '2026-10-23', '23:59', 1],
+  ['DH110', 'Learning Styles Assessment Drop Box', '2026-10-23', '23:59', 2],
+  ['DH103', '2. Lesson 1 Crossword Dropbox', '2026-10-23', '23:59', 1],
+  ['DH110', 'ADEA Membership drop box', '2026-10-28', '23:59'],
+  ['DH108', 'Microbiology Test 1A', '2026-10-30', '17:25', 100, 10, true],
+  ['DH107', '3.4 Journal Citation Homework', '2026-11-04', '23:59'],
+  ['DH110', 'CDHA membership drop box', '2026-11-09', '23:59'],
+  ['DH110', 'ODHA Membership Drop Box', '2026-11-09', '23:59'],
+  ['DH103', '3. Lesson 2 Review Crossword Dropbox', '2026-11-14', '23:59', 1],
+  ['DH103', '5. Test 1 Flashcards', '2026-11-15', '23:59', 1],
+  ['DH107', '4.3 Warning Reflection Paper', '2026-11-20', '23:59', 15],
+  ['DH108', 'Microbiology Test 2A', '2026-11-23', '17:00', 50, 10, true],
+  ['DH107', 'Thesis Statement & Outline', '2026-11-27', '23:59'],
+  ['DH108', 'Microbiology Test 3', '2026-12-07', '15:30', 15, 15, true],
+  ['DH107', 'Medical Terminology', '2026-12-09', '23:59'],
+  ['DH110', 'DH 110 Test 1', '2026-12-16', '15:55', 70, '', true],
+  ['DH107', '7.3 Assignment 2 – Academic Paper', '2026-12-18', '23:59', 100, 30],
+  ['DH107', '7.4 Assignment 2 – Peer and Self Reflection', '2027-01-06', '23:59'],
+  ['DH107', 'Assignment 2, Part B', '2027-01-06', '23:59', 100, 10],
+  ['DH102', 'Participation Activity Drop Box', '2027-01-08', '23:59', 10],
+  ['DH110', 'CDHO – Consent and the Dental Hygienist', '2027-01-11', '23:59'],
+  ['DH108', 'Assignment 1 – IPAC Reprocessing in the Community Course', '2027-01-13', '23:59', 5],
+  ['DH108', 'Peer Evaluation Form Dropbox', '2027-01-27', '23:59'],
+  ['DH108', 'Assignment 2: Infection Control Assignment & Presentation', '2027-01-27', '23:59', 100],
+  ['DH110', 'Ethics in Dentistry: Part I – Principles and Values', '2027-01-29', '23:59', 1],
+  ['DH108', 'Microbiology Test 4', '2027-02-03', '19:00', 15, 15, true],
+  ['DH110', 'Assignment #2: Philosophy of Oral and General Health paper', '2027-02-08', '23:59', 20],
+  ['DH107', 'Self- and Peer-Assessment A3', '2027-02-18', '23:59'],
+  ['DH107', 'A3 – Cultural Diversity PPT', '2027-02-18', '23:59', 100, 15],
+  ['DH110', 'Portfolio Shell', '2027-02-19', '23:59', 5],
+  ['DH110', 'Final Portfolio submission', '2027-02-24', '23:59', 5],
+  ['DH110', 'Developing as a Professional – Continuing Education requirements for RDHs', '2027-02-28', '23:59', 2],
+  // The exam itself is already on the timetable (Mar 3, 8:00); this is Brightspace's closing time.
+  ['DH108', 'FINAL EXAM (Brightspace)', '2027-03-03', '13:00', 35, '', false, 'The exam is on the timetable at 8:00 am; Brightspace closes at 1:00 pm.'],
+  ['DH107', 'Cultural Summary – A reflection', '2027-03-05', '23:59', 5],
+];
+// Notion deadlines that are also on Brightspace: Brightspace gives them an 11:59 pm due time.
+const BRIGHTSPACE_TIMES = { t_seed_06: '23:59', t_seed_07: '23:59', t_seed_08: '23:59', t_seed_09: '23:59', t_seed_10: '23:59' };
 function seedDeadlines() {
   let added = 0;
   STARTER_DEADLINES.forEach(([course, title, date, start, status], i) => {
@@ -2971,6 +3045,18 @@ function seedDeadlines() {
       attachments: [], status, done: status === 'done', grade: '', weight: '', createdAt: 1, updatedAt: 1 });
     added++;
   });
+  BRIGHTSPACE_DEADLINES.forEach(([course, title, date, start, pts = '', weight = '', exam = false, note = ''], i) => {
+    const id = `t_bs_${String(i + 1).padStart(2, '0')}`;
+    if (data.deleted[id] || data.items.some((x) => x.id === id)) return;
+    data.items.push({ id, type: exam ? 'exam' : 'assignment', task: true, exam, kind: exam ? 'exam' : 'assignment', title, course, date, start, end: '', mode: '',
+      priority: 'normal', notes: [note, pts ? `Worth ${pts} pt${pts === 1 ? '' : 's'} on Brightspace.` : ''].filter(Boolean).join('\n'), subtasks: [],
+      attachments: [], status: 'not-started', done: false, grade: '', weight: String(weight), createdAt: 1, updatedAt: 1 });
+    added++;
+  });
+  for (const [id, start] of Object.entries(BRIGHTSPACE_TIMES)) {
+    const it = data.items.find((x) => x.id === id);
+    if (it && !it.start && it.updatedAt === 1) { it.start = start; it.updatedAt = 2; added++; }
+  }
   if (added) commit({ rerender: false });
 }
 

@@ -27,7 +27,8 @@ A password-protected timetable and school-year tracker for the dental hygiene pr
 - **Deadlines (Tasks tab).** Every due date is listed in date order, with columns for Class, Name, Due date,
   Status (Not started / In progress / Done), Grade and Weight, like the Notion tracker. Timetable exams
   are included, and a line marks today. You can add more from the row at the bottom. The deadlines from the Notion
-  "CADH L1 – Deadline Tracker" are preloaded once.
+  "CADH L1 – Deadline Tracker" are preloaded once. So are the Brightspace due dates for the October 2026 intake (DH 102, 103, 107, 108, 110 and Level 1 Orientation),
+  with their due times, point values in the notes, and course weights where Brightspace gives them.
 - **Notes.** Free-form notes you can tag with a course, pin and search. Class-session notes are
   also listed here.
 - **Assignments, due dates, events, exams and reminders.** Each one can have a checklist,
@@ -40,6 +41,10 @@ A password-protected timetable and school-year tracker for the dental hygiene pr
   periods (days, times, lecture/lab/clinic, in person or online, room, every week or every 2 weeks, optional date range), then a review.
   The 1–4 boxes in the header switch between levels you've set up. Level 1 can also get extra courses and periods
   (Courses → *Add courses & class periods*) on top of the official timetable.
+- **Roomy event adder.** The quick-add card that opens after dragging on the week grid is wide enough to set the title, type,
+  date, start and end time, course, in person / online and Task without opening anything else. *More options* (and *New calendar
+  entry*) opens the full editor in two columns on wide screens: type, title, timing and behaviour on the left; course, colour,
+  notes, checklist, attachments and grading on the right.
 - **Calendar entries you design yourself.** Drag on an empty part of the week grid to create one (a quick-add card opens), or use
   *New calendar entry*. Every entry has a type, an icon, a title, a course, a colour, a date, optional start/end times or all-day, a repeat
   rule (daily, weekdays, weekly on chosen days, monthly, every N, until a date), a location, notes, a checklist and attachments.
