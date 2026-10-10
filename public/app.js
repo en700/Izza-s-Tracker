@@ -1279,6 +1279,117 @@ function updateRow(key, patch) {
   upsert('items', it);
 }
 
+// Phones: grouped cards with a big tick, a one-line summary and filters in a bottom sheet.
+const STATUS_SHORT = { 'not-started': 'To do', 'in-progress': 'Doing', done: 'Done' };
+const STATUS_NEXT = { 'not-started': 'in-progress', 'in-progress': 'done', done: 'not-started' };
+function setRowStatus(key, st, el) {
+  const card = el?.closest('.tk');
+  const finish = () => {
+    updateRow(key, { status: st });
+    commit();
+    if (st === 'done') toast('Nice — marked done ✓');
+  };
+  // Let the card tick and slide away before the list re-sorts.
+  if (card && st === 'done' && !reducedMotionMQ.matches) { card.classList.add('ticking'); setTimeout(finish, 260); } else finish();
+}
+function openTaskFilters(v) {
+  openModal(`${modalHead('Filter deadlines')}
+    <div class="body">
+      <label class="field">Course<select id="tf-course"><option value="">All courses</option>${Object.keys(SCHED.courses).map((c) => `<option value="${c}" ${c === ui.taskCourse ? 'selected' : ''}>${codeLabel(c)} · ${esc(COURSE_SHORT[c])}</option>`).join('')}</select></label>
+      <label class="field">Type<select id="tf-kind"><option value="">All types</option>${typeOptions(ui.taskKind)}</select></label>
+      <label class="switch-row"><input type="checkbox" id="tf-tt" ${ui.taskTimetable ? 'checked' : ''}><span class="sw-track"></span><span><b>Timetable exams</b><span class="muted small">Include exams and tests from the official timetable</span></span></label>
+    </div>
+    <footer><button class="btn left" id="tf-reset">Reset</button><button class="btn primary" id="tf-apply">Show results</button></footer>`);
+  $('#tf-reset').onclick = () => { ui.taskCourse = ''; ui.taskKind = ''; ui.taskTimetable = true; closeModal(); renderTasks(v); };
+  $('#tf-apply').onclick = () => {
+    ui.taskCourse = $('#tf-course').value; ui.taskKind = $('#tf-kind').value; ui.taskTimetable = $('#tf-tt').checked;
+    closeModal(); renderTasks(v);
+  };
+}
+function renderTasksMobile(v, { all, rows, open, overdue, weekDue, doneCount, pct, today, weekEnd }) {
+  const tomorrow = D.iso(D.add(D.parse(today), 1));
+  const nextEnd = D.iso(D.add(D.parse(weekEnd), 7));
+  const group = (r) => {
+    if (r.status === 'done' && ui.taskFilter !== 'done') return ['done', 'Done'];
+    if (!r.date) return ['nodate', 'No date'];
+    if (r.status !== 'done' && r.date < today) return ['overdue', 'Overdue'];
+    if (r.date === today) return ['today', 'Today'];
+    if (r.date === tomorrow) return ['tomorrow', 'Tomorrow'];
+    if (r.date > today && r.date <= weekEnd) return ['week', 'Later this week'];
+    if (r.date > today && r.date <= nextEnd) return ['next', 'Next week'];
+    const d = D.parse(r.date);
+    return [`m${r.date.slice(0, 7)}`, `${MON[d.getMonth()]} ${d.getFullYear()}`];
+  };
+  const list = ui.taskFilter === 'done' ? [...rows].reverse() : rows;
+  const groups = new Map();
+  for (const r of list) {
+    const [k, label] = group(r);
+    if (!groups.has(k)) groups.set(k, { label, rows: [] });
+    groups.get(k).rows.push(r);
+  }
+  // Done items go last (folded) and overdue first.
+  const order = [...groups.keys()].sort((a, b) => (a === 'overdue' ? -1 : b === 'overdue' ? 1 : a === 'done' ? 1 : b === 'done' ? -1 : a === 'nodate' ? 1 : b === 'nodate' ? -1 : 0));
+  const card = (r) => {
+    const it = r.item, done = r.status === 'done';
+    const over = !done && r.date && r.date < today;
+    const subs = it?.subtasks || [];
+    const when = r.date ? `${fmtDate(r.date)}${r.time ? ' · ' + fmtTime(r.time) : ''}` : 'No date';
+    return `<div class="tk ${done ? 'is-done' : ''} ${over ? 'over' : ''}" data-open="${r.key}" style="--c:${r.code ? courseColor(r.code) : 'var(--PERSONAL)'}">
+      <button type="button" class="tk-check" data-tkdone="${r.key}" role="checkbox" aria-checked="${done}" aria-label="${done ? 'Mark not done' : 'Mark done'}"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10.5l3.2 3.2L15 6.8"/></svg></button>
+      <div class="tk-main">
+        <div class="tk-title">${esc(r.name)}${r.kind === 'exam' || r.kind === 'test' ? ' ' + kindChip({ kind: r.kind === 'test' ? 'test' : 'exam' }) : ''}</div>
+        <div class="tk-meta">${r.code ? `<span class="chip crs" style="--c:${courseColor(r.code)}">${codeLabel(r.code)}</span>` : ''}
+          <span class="tk-due">${over ? '⚠ ' : ''}${when}</span>${r.date && !done && relDay(r.date) !== fmtDate(r.date) ? `<span class="tk-rel">${relDay(r.date)}</span>` : ''}
+          ${subs.length ? `<span>☑ ${subs.filter((x) => x.done).length}/${subs.length}</span>` : ''}${(it?.attachments || []).length ? `<span>${ICON.clip}${it.attachments.length}</span>` : ''}
+          ${r.weight !== '' && r.weight != null ? `<span class="tk-badge">${esc(r.weight)}%</span>` : ''}${r.grade ? `<span class="tk-badge grade">${esc(r.grade)}</span>` : ''}
+          ${r.src === 's' ? '<span>timetable</span>' : ''}</div>
+      </div>
+      <button type="button" class="tk-st st-${r.status}" data-tkstatus="${r.key}|${r.status}" aria-label="Status: ${STATUS[r.status]} — tap to change">${STATUS_SHORT[r.status]}</button>
+    </div>`;
+  };
+  const filtersOn = (ui.taskCourse ? 1 : 0) + (ui.taskKind ? 1 : 0) + (ui.taskTimetable ? 0 : 1);
+  const chips = [
+    ui.taskCourse && `<button class="tk-chip" data-tkclear="course">${codeLabel(ui.taskCourse)} ✕</button>`,
+    ui.taskKind && `<button class="tk-chip" data-tkclear="kind">${esc(typesList().find((t) => t.id === ui.taskKind)?.name || ui.taskKind)} ✕</button>`,
+    !ui.taskTimetable && '<button class="tk-chip" data-tkclear="tt">No timetable exams ✕</button>',
+  ].filter(Boolean).join('');
+  const searchOpen = ui.taskSearchOpen || !!ui.taskQuery;
+  v.innerHTML = `<div class="tk-head">
+      <h2>Deadlines</h2>
+      <button class="btn icon tk-icon ${searchOpen ? 'on' : ''}" id="tk-search-btn" aria-label="Search" aria-expanded="${searchOpen}"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5"/><path d="M12.3 12.3l4.2 4.2"/></svg></button>
+      <button class="btn tk-icon ${filtersOn ? 'on' : ''}" id="tk-filter-btn" aria-label="Filters"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14M6 10h8M8.5 15h3"/></svg>${filtersOn ? `<b>${filtersOn}</b>` : ''}</button>
+    </div>
+    ${searchOpen ? `<input type="search" id="tk-q" class="tk-search" placeholder="Search deadlines…" value="${esc(ui.taskQuery)}">` : ''}
+    <div class="seg tk-seg" role="group" aria-label="Status">${[['open', 'To do'], ['all', 'All'], ['done', 'Done']].map(([f, n]) => `<button data-tf="${f}" aria-pressed="${ui.taskFilter === f}">${n}</button>`).join('')}</div>
+    ${chips ? `<div class="tk-chips">${chips}</div>` : ''}
+    <div class="card tk-sum">
+      <div><b>${open.length}</b><span>to do</span></div>
+      <div class="${overdue ? 'warn' : ''}"><b>${overdue}</b><span>overdue</span></div>
+      <div><b>${weekDue}</b><span>this week</span></div>
+      <div><b>${pct}%</b><span>${doneCount}/${all.length} done</span></div>
+      <div class="progress"><i style="width:${pct}%"></i></div>
+    </div>
+    ${rows.length ? order.map((k) => {
+      const g = groups.get(k);
+      const head = `<span>${g.label}</span><span class="tk-n">${g.rows.length}</span>`;
+      const inner = g.rows.map(card).join('');
+      return k === 'done' && ui.taskFilter === 'all'
+        ? `<details class="tk-group tk-donegrp"><summary class="tk-gh">${head}</summary>${inner}</details>`
+        : `<section class="tk-group ${k === 'overdue' ? 'is-over' : ''}"><h3 class="tk-gh">${head}</h3>${inner}</section>`;
+    }).join('') : `<div class="card empty">${all.length ? (ui.taskFilter === 'open' ? 'All caught up 🎉' : 'Nothing matches these filters.') : 'No deadlines yet — tap the button below to add one.'}</div>`}`;
+
+  $$('[data-tf]', v).forEach((b) => (b.onclick = () => { ui.taskFilter = b.dataset.tf; renderTasks(v); }));
+  $('#tk-filter-btn').onclick = () => openTaskFilters(v);
+  $('#tk-search-btn').onclick = () => { ui.taskSearchOpen = !searchOpen; if (searchOpen) ui.taskQuery = ''; renderTasks(v); $('#tk-q')?.focus(); };
+  $$('[data-tkclear]', v).forEach((b) => (b.onclick = () => {
+    const f = b.dataset.tkclear;
+    if (f === 'course') ui.taskCourse = ''; else if (f === 'kind') ui.taskKind = ''; else ui.taskTimetable = true;
+    renderTasks(v);
+  }));
+  const qi = $('#tk-q');
+  qi?.addEventListener('input', debounce(() => { ui.taskQuery = qi.value; renderTasks(v); const n = $('#tk-q'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }, 250));
+}
+
 function renderTasks(v) {
   const today = D.today();
   const weekEnd = D.iso(D.add(D.sow(new Date()), 6));
@@ -1293,6 +1404,7 @@ function renderTasks(v) {
   const weekDue = open.filter((r) => r.date >= today && r.date <= weekEnd).length;
   const doneCount = all.length - open.length;
   const pct = all.length ? Math.round((doneCount / all.length) * 100) : 0;
+  if (narrowMQ.matches) return renderTasksMobile(v, { all, rows, open, overdue, weekDue, doneCount, pct, today, weekEnd });
 
   let todayMarked = false;
   const body = rows.map((r) => {
@@ -2923,6 +3035,19 @@ document.addEventListener('click', (e) => {
   if (ddEl) { e.preventDefault(); return toggleDayDone(ddEl.dataset.daydone); }
   const colEl = e.target.closest('[data-collapse]');
   if (colEl) { e.preventDefault(); return setDayCollapsed(colEl.dataset.collapse, !dayIsCollapsed(colEl.dataset.collapse)); }
+  const tkDone = e.target.closest('[data-tkdone]');
+  if (tkDone) {
+    e.preventDefault(); e.stopPropagation();
+    const on = tkDone.getAttribute('aria-checked') !== 'true';
+    tkDone.setAttribute('aria-checked', String(on));
+    return setRowStatus(tkDone.dataset.tkdone, on ? 'done' : 'not-started', tkDone);
+  }
+  const tkSt = e.target.closest('[data-tkstatus]');
+  if (tkSt) {
+    e.preventDefault(); e.stopPropagation();
+    const [key, st] = [tkSt.dataset.tkstatus.slice(0, tkSt.dataset.tkstatus.lastIndexOf('|')), tkSt.dataset.tkstatus.split('|').pop()];
+    return setRowStatus(key, STATUS_NEXT[st], tkSt);
+  }
   const doneEl = e.target.closest('[data-done]');
   if (doneEl) { e.preventDefault(); e.stopPropagation(); return toggleEntryDone(doneEl.dataset.done); }
   const cpEl = e.target.closest('[data-carpool]');
@@ -2998,7 +3123,7 @@ document.addEventListener('keydown', (e) => {
   else if (k === 'p') openPrint();
   else if ('123456'.includes(k)) setView(['week', 'month', 'agenda', 'tasks', 'notes', 'courses'][+k - 1]);
 });
-narrowMQ.addEventListener('change', () => (ui.view === 'week' || ui.view === 'month') && render());
+narrowMQ.addEventListener('change', () => ['week', 'month', 'tasks'].includes(ui.view) && render());
 // Pick up edits made on another device when coming back to the tab.
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState === 'visible' && sync.cloud && !sync.inflight && !$('#modal-root').innerHTML && ui.view !== 'notes') {

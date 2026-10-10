@@ -63,6 +63,11 @@ A password-protected timetable and school-year tracker for the dental hygiene pr
 - **Agenda days fold away.** Tap a day's header to collapse it to just its date (with an item count) or open it again, with a smooth
   animation. *Collapse all* / *Expand all* do every day at once. Each day has a **Day done** box; ticking it marks the day finished
   (synced across devices) and folds it away.
+- **Deadlines on phones** are a card list grouped into *Overdue*, *Today*, *Tomorrow*, *Later this week*, *Next week* and then by month,
+  with a large tick circle on each card (the card slides away when ticked) and a status pill you tap to cycle *To do → Doing → Done*.
+  *To do / All / Done* sits under the title, the totals fit on one line, search hides behind 🔍, and course, type and timetable-exam
+  filters open in a bottom sheet (active ones show as removable chips). Done items fold into a *Done* section at the end. Tap a card for
+  grade, weight, notes and the rest.
 - **Made for phones.** Below 760 px wide the views move to a bottom tab bar, the header shrinks to the logo and a ☰ menu, and
   the menu slides in from the side with LEVEL UP!, the level switcher, Import, Print, Settings, Entry types and Sign out.
   Dialogs open as bottom sheets with the Save button always in reach (drag the handle down to dismiss), and the Month view becomes
