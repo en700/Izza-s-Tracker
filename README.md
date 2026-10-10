@@ -33,7 +33,9 @@ A password-protected timetable and school-year tracker for the dental hygiene pr
   also listed here.
 - **Assignments, due dates, events, exams and reminders.** Each one can have a checklist,
   a priority and file attachments. Use **Import** to load a `.ics` calendar (Brightspace/D2L,
-  Google, Outlook), a `.csv` file or a backup. **Settings → Export calendar** downloads an `.ics`
+  Google, Outlook), a `.csv` file or a backup. Import marks anything already in your calendar (same day and a matching title, ignoring
+  prefixes like "Assignment:", numbering and "- 10%"; or a test on a day the timetable already has one for that course) and anything
+  listed twice in the file, and leaves those unticked so they aren't added twice. **Settings → Export calendar** downloads an `.ics`
   file of your schedule.
 - **LEVEL UP!** (4 levels). The button stays locked 🔒 until every course in the current level is complete. A course counts as
   complete once its last class is over, or when you mark it complete on the Courses page or in the lock dialog. Once unlocked, it opens

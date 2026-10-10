@@ -2332,6 +2332,30 @@ function parseCSV(text) {
       course: guessCourse(ci.course > -1 ? r[ci.course] : '') || guessCourse(title), notes: ci.notes > -1 ? r[ci.notes] || '' : '' };
   }).filter((r) => r.title && r.date);
 }
+// Duplicate detection for imports: same day plus a matching title (ignoring "Assignment:", numbering,
+// "- 10%" and punctuation), or a test/exam on a day the timetable already has one for that course.
+const normTitle = (t) => String(t || '').toLowerCase()
+  .replace(/^(assignment|knowledge check|quiz|discussion)\s*[:\-–]\s*/, '')
+  .replace(/^\d+(\.\d+)*[a-z]?[.)]?\s+/, '').replace(/-?\s*\d+\s*%/g, ' ')
+  .replace(/[^a-z0-9]+/g, ' ').replace(/\b(the|a|an|and|of|for|drop ?box|dropbox|directions)\b/g, ' ').replace(/\s+/g, ' ').trim();
+function titlesMatch(a, b) {
+  const x = normTitle(a), y = normTitle(b);
+  if (!x || !y) return false;
+  if (x === y || (Math.min(x.length, y.length) >= 6 && (x.includes(y) || y.includes(x)))) return true;
+  const wa = new Set(x.split(' ')), wb = new Set(y.split(' '));
+  const common = [...wa].filter((w) => wb.has(w)).length;
+  return common / Math.min(wa.size, wb.size) >= 0.75 && (common >= 2 || Math.min(wa.size, wb.size) === 1);
+}
+const isTestLike = (r) => r.kind === 'exam' || /\b(test|exam|midterm|final|quiz)\b/i.test(r.title);
+function findDuplicate(r) {
+  const it = data.items.find((i) => !data.deleted[i.id] && i.date === r.date && (!r.course || !i.course || i.course === r.course) && titlesMatch(i.title, r.title));
+  if (it) return it.title;
+  if (isTestLike(r)) {
+    const s = SCHED.sessions.find((x) => x.date === r.date && (x.kind === 'exam' || x.kind === 'test') && (!r.course || x.code === r.course));
+    if (s) return `${s.title} (timetable ${s.kind})`;
+  }
+  return '';
+}
 function openImport() {
   const modal = openModal(`
     ${modalHead('Import events & due dates', 'Upload a calendar (.ics from Brightspace, D2L, Google, Outlook…), a spreadsheet (.csv) or a backup (.json).')}
@@ -2369,14 +2393,19 @@ function openImport() {
       return;
     }
     rows.sort((a, b) => a.date.localeCompare(b.date));
-    $('#im-preview').innerHTML = rows.length ? `<div class="toolbar" style="margin:0"><b>${rows.length} found</b><span class="spacer"></span><label class="check small"><input type="checkbox" id="im-all" checked> Select all</label></div>
-      <div class="preview-list">${rows.map((r, i) => `<label><input type="checkbox" data-ri="${i}" checked>
+    // Flag rows already in the calendar, and repeats inside the file itself; they start unticked.
+    rows.forEach((r, i) => {
+      r.dup = findDuplicate(r) || (rows.slice(0, i).some((o) => o.date === r.date && (o.course || '') === (r.course || '') && titlesMatch(o.title, r.title)) ? 'listed twice in this file' : '');
+    });
+    const dups = rows.filter((r) => r.dup).length;
+    $('#im-preview').innerHTML = rows.length ? `<div class="toolbar" style="margin:0"><b>${rows.length} found</b>${dups ? `<span class="muted small">${dups} already in your calendar (unticked)</span>` : ''}<span class="spacer"></span><label class="check small"><input type="checkbox" id="im-all" checked> Select all</label></div>
+      <div class="preview-list">${rows.map((r, i) => `<label class="${r.dup ? 'is-dup' : ''}"><input type="checkbox" data-ri="${i}" ${r.dup ? '' : 'checked'}>
         <span style="min-width:96px" class="muted">${fmtDate(r.date)}${r.start ? ' ' + fmtTime(r.start) : ''}</span>
         <select data-rk="${i}" style="width:auto;min-height:26px;padding:2px 6px">${typeOptions(r.kind)}</select>
-        ${r.course ? `<span class="chip crs" style="--c:${courseColor(r.course)}">${codeLabel(r.course)}</span>` : ''}<span>${esc(r.title)}</span></label>`).join('')}</div>`
+        ${r.course ? `<span class="chip crs" style="--c:${courseColor(r.course)}">${codeLabel(r.course)}</span>` : ''}<span>${esc(r.title)}</span>${r.dup ? `<span class="dup-tag" title="${esc(r.dup)}">${r.dup === 'listed twice in this file' ? 'Listed twice in this file' : `Duplicate of “${esc(r.dup)}”`}</span>` : ''}</label>`).join('')}</div>`
       : '<div class="note-hint">No events with a title and date were found in that file.</div>';
     $('#im-go').disabled = !rows.length;
-    $('#im-all')?.addEventListener('change', (e) => $$('[data-ri]', modal).forEach((c) => (c.checked = e.target.checked)));
+    $('#im-all')?.addEventListener('change', (e) => $$('[data-ri]', modal).forEach((c) => (c.checked = e.target.checked && !rows[c.dataset.ri].dup)));
     $$('[data-rk]', modal).forEach((s) => (s.onchange = () => (rows[s.dataset.rk].kind = s.value)));
   };
   $('#im-file').onchange = (e) => handle(e.target.files[0]);
