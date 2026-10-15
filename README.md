@@ -29,6 +29,10 @@ A password-protected timetable and school-year tracker for the dental hygiene pr
   are included, and a line marks today. You can add more from the row at the bottom. The deadlines from the Notion
   "CADH L1 – Deadline Tracker" are preloaded once. So are the Brightspace due dates for the October 2026 intake (DH 102, 103, 107, 108, 110 and Level 1 Orientation),
   with their due times, point values in the notes, and course weights where Brightspace gives them.
+  The DH 101 Preclinical Practice I course schedule is in too: competency tests, comprehensive instrument testing, re-testing, partner-care
+  clinics #1–6 and the two Canvas drop-box deadlines are deadlines (at your Group A session times), and the rest of each week's plan is
+  added to the class notes on that day's DH 101 sessions. Outline weeks are matched to the academic calendar (week 2 = Oct 13, winter
+  break Dec 21 – Jan 3 skipped, week 12 = Jan 5).
 - **Notes.** Free-form notes you can tag with a course, pin and search. Class-session notes are
   also listed here.
 - **Assignments, due dates, events, exams and reminders.** Each one can have a checklist,
@@ -52,7 +56,8 @@ A password-protected timetable and school-year tracker for the dental hygiene pr
   rule (daily, weekdays, weekly on chosen days, monthly, every N, until a date), a location, notes, a checklist and attachments.
   Three switches decide how it behaves, whatever its type: **Task** (a tick-off box wherever it appears, plus status, priority, grade and
   weight in Deadlines), **Exam / test** (EXAM badge) and **Class checks** (Prepared / Attended / Reviewed boxes like a class). Drag your
-  own entries to move them and drag their bottom edge to resize. Editing or deleting one occurrence of a repeating entry asks
+  own entries to move them and drag their bottom edge to resize. Drag a due date (or any all-day item) in the week view's *Due* row onto another day to
+  reschedule it; its time, notes and everything else stay the same. Editing or deleting one occurrence of a repeating entry asks
   *This event / This and following / All events*. Repeating entries export to `.ics` with their repeat rules.
 - **Entry types are yours.** There are no fixed categories: *Settings → Entry types* (or ✎ *Manage types* in the editor) lets you add,
   rename, recolour, re-icon or remove types, and choose what new entries of each type start with (task, exam, class checks, time range).

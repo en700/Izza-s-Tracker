@@ -819,7 +819,7 @@ function renderWeek(v) {
       <div class="daytag">${tag ? `<span class="chip ${tag.cls}">${tag.label}</span>` : '&nbsp;'}</div></div>`;
   }).join('');
 
-  const allday = perDay.map((list) => `<div class="cell">${list.filter((e) => !isTimed(e)).map(pillHTML).join('')}</div>`).join('');
+  const allday = perDay.map((list, i) => `<div class="cell" data-day="${days[i]}">${list.filter((e) => !isTimed(e)).map(pillHTML).join('')}</div>`).join('');
 
   let times = '';
   for (let m = lo; m <= hi; m += 60) times += `<span style="top:${px(m)}px">${fmtTime(D.hm(m), m === lo || m === 720 || data.settings.clock === '24' ? true : false)}</span>`;
@@ -843,7 +843,7 @@ function renderWeek(v) {
       <div class="wk-allday"><div class="lbl">Due / all day</div>${allday}</div>
       <div class="wk-body" style="height:${px(hi) + PAD}px;--pad:${PAD}px"><div class="wk-times">${times}</div>${colsHTML}</div>
     </div></div>
-    <div class="muted small grid-hint">Tip: drag on an empty part of the grid to add an event · drag your own events to move them, or their bottom edge to change the length.</div>
+    <div class="muted small grid-hint">Tip: drag on an empty part of the grid to add an event · drag your own events to move them, or their bottom edge to change the length · drag a due date to another day to reschedule it.</div>
     `);
   bindWeekGrid(v, { lo, hi, slot, PAD });
 }
@@ -857,6 +857,64 @@ function bindWeekGrid(root, g) {
   const snap = (m) => Math.round(m / 15) * 15;
   const yToMin = (col, y) => clamp(snap(g.lo + ((y - col.getBoundingClientRect().top - g.PAD) / g.slot) * 30), g.lo, g.hi);
   const colAt = (x, y) => document.elementsFromPoint(x, y).find((el) => el.classList?.contains('wk-col'));
+
+  // Due / all-day pills: drag one to another day to reschedule it (time, notes and everything else stay).
+  $('.wk-allday', root)?.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || e.pointerType === 'touch' || e.target.closest('[data-done]')) return;
+    const pill = e.target.closest('.pill[data-open^="i:"]');
+    if (pill) dragPill(e, pill);
+  });
+  function dragPill(e, pill) {
+    const [id, occ] = pill.dataset.open.slice(2).split('|');
+    const it = data.items.find((i) => i.id === id);
+    if (!it) return;
+    e.preventDefault();
+    const cells = $$('.wk-allday .cell[data-day]', root);
+    const from = occ || it.date;
+    let ghost = null, target = null;
+    const cellAt = (x) => cells.find((c) => { const r = c.getBoundingClientRect(); return x >= r.left && x < r.right; });
+    const mark = (c) => {
+      if (c === target) return;
+      target?.classList.remove('drop-target');
+      $$('.wk-col.drop-target', root).forEach((x) => x.classList.remove('drop-target'));
+      target = c;
+      if (c && c.dataset.day !== from) {
+        c.classList.add('drop-target');
+        $(`.wk-col[data-day="${c.dataset.day}"]`, root)?.classList.add('drop-target');
+      }
+    };
+    const move = (ev) => {
+      if (!ghost) {
+        if (Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) < 5) return;
+        const r = pill.getBoundingClientRect();
+        ghost = pill.cloneNode(true);
+        ghost.classList.add('pill-ghost');
+        ghost.style.width = r.width + 'px';
+        document.body.appendChild(ghost);
+        pill.classList.add('drag-src');
+        document.body.classList.add('dragging-pill');
+      }
+      ghost.style.left = ev.clientX - 14 + 'px';
+      ghost.style.top = ev.clientY - 10 + 'px';
+      mark(cellAt(ev.clientX));
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      if (!ghost) return; // plain click: opens the editor
+      suppressClickUntil = Date.now() + 400;
+      ghost.remove();
+      pill.classList.remove('drag-src');
+      document.body.classList.remove('dragging-pill');
+      const to = target?.dataset.day;
+      mark(null);
+      if (!to || to === from) return;
+      moveItem(it, from, to, it.start || '', it.end || '');
+      toast(`Moved to ${fmtDate(to)}`);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }
 
   body.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 || e.pointerType === 'touch') return; // touch: tap handled by click below
@@ -3260,6 +3318,104 @@ const BRIGHTSPACE_DEADLINES = [
 ];
 // Notion deadlines that are also on Brightspace: Brightspace gives them an 11:59 pm due time.
 const BRIGHTSPACE_TIMES = { t_seed_06: '23:59', t_seed_07: '23:59', t_seed_08: '23:59', t_seed_09: '23:59', t_seed_10: '23:59' };
+// DH 101 Preclinical Practice I course schedule. Weeks follow the academic calendar: week 1 = Oct 5,
+// Thanksgiving week keeps its Tue/Thu sessions, winter break (Dec 21 – Jan 3) is skipped, so week 11 = Dec 15/17,
+// week 12 = Jan 5/7 and weeks 16–21 match the dates printed in the outline. The outline's "Tues Mar 4" is
+// Thursday Mar 4 (the timetable's partner-care clinic). Times are your Group A sessions.
+// Bolded items → deadlines: [date, time, title, kind, notes]
+const OUTLINE_DEADLINES = [
+  ['2026-11-05', '14:30', 'Competency testing: Probe', 'exam', 'Week 5, Thursday session (Group A 2:30 pm; Group B 9:30 am).'],
+  ['2026-11-19', '14:30', 'Competency testing: Explorers (EXD 11/12, Shepherd Hook)', 'exam', 'Week 7, Thursday session (Group A 2:30 pm; Group B 9:30 am).'],
+  ['2026-12-03', '14:30', 'Competency testing: Sickle scalers (H5/33, 204S)', 'exam', 'Week 9, Thursday session (Group A 2:30 pm; Group B 9:30 am).'],
+  ['2026-12-15', '09:30', 'Competency testing: Sharpening techniques', 'exam', 'Week 11, Tuesday session (Group A 9:30 am; Group B 2:30 pm).'],
+  ['2026-12-17', '14:30', 'Competency testing: 2 of G1/2, G11/12, G13/14', 'exam', 'Week 11, Thursday session (Group A 2:30 pm; Group B 9:30 am). Tested on 2 of the following: G1/2, G11/12, G13/14.'],
+  ['2027-01-14', '14:30', 'Competency testing: Universal Curet', 'exam', 'Week 13, Thursday session (Group A 2:30 pm; Group B 9:30 am).'],
+  ['2027-01-21', '14:30', 'Competency testing: Emergency procedures', 'exam', 'Week 14, Thursday session (Group A 2:30 pm; Group B 9:30 am).'],
+  ['2027-01-28', '14:30', 'Comprehensive Instrument testing: Scenario', 'exam', 'Week 15, Thursday session (2 hrs). The outline also lists it on Tue Feb 2 — check which day is yours.'],
+  ['2027-02-02', '09:30', 'Comprehensive Instrument testing: Scenario (Feb 2)', 'exam', 'Week 16, Tuesday session (2 hrs). The outline also lists it on Thu Jan 28 — check which day is yours.'],
+  ['2027-02-09', '09:30', 'Competency testing: IPAC (dental unit & instrument reprocessing)', 'exam', 'Week 17, Tuesday (clinic).'],
+  ['2027-02-11', '14:30', 'Competency re-testing (as required)', 'exam', 'Week 17, Thursday. Instrumentation feedback (as required).'],
+  ['2027-02-16', '09:30', 'Competency/instrumentation re-testing + IPAC remedial (as required)', 'exam', 'Week 18, Tuesday (clinic & lab). Return bolts after instrument re-testing.'],
+  ['2027-02-18', '', 'Instrumentation remediation & re-testing (if required)', 'exam', 'Week 18, Thursday.'],
+  ['2027-02-20', '08:00', 'Partner Care: Clinic #1', 'clinic', 'Assessment, dental hygiene diagnosis and planning (clinic). Group A is clinician 8:00 am–1:00 pm, client 2:00–7:00 pm.'],
+  ['2027-02-25', '14:30', 'Partner Care: Clinic #2', 'clinic', 'Assessment, dental hygiene diagnosis and planning (clinic). Group A is client 8:00 am–1:00 pm, clinician 2:30–7:30 pm.'],
+  ['2027-02-26', '23:59', 'Peer Mentor Observations due', 'assignment', 'Submit to the drop box in DH 101 on Canvas.'],
+  ['2027-02-27', '14:00', 'Partner Care: Clinic #3', 'clinic', 'Assessment, dental hygiene diagnosis and planning (clinic). Group A is client 8:00 am–1:00 pm, clinician 2:00–7:00 pm.'],
+  ['2027-03-04', '14:30', 'Partner Care: Clinic #4', 'clinic', 'Assessment, dental hygiene diagnosis and planning (clinic). Group A is client 8:00 am–1:00 pm, clinician 2:30–7:30 pm.'],
+  ['2027-03-05', '23:59', 'Final Reflection Papers due', 'assignment', 'Submit to the drop box in DH 101 on Canvas.'],
+  ['2027-03-06', '08:00', 'Partner Care: Clinic #5', 'clinic', 'Dental hygiene diagnosis, planning (clinic). Group A is clinician 8:00 am–1:00 pm, client 2:00–7:00 pm.'],
+  ['2027-03-09', '08:00', 'Partner Care: Clinic #6 (final session)', 'clinic', 'Dental hygiene diagnosis, planning (clinic). Group A is clinician 8:00 am–1:00 pm, client 2:30–7:30 pm.'],
+];
+// Everything else in the outline → class notes on that day's DH 101 sessions (Tue = session 1, Thu = session 2).
+const VID = '*Review video from www.jblearning.com';
+const PRACTICE = 'Practice all instruments and skills.';
+const OUTLINE_NOTES = {
+  '2026-10-13': 'Review course outline. Review pre-clinical protocol and fire & safety procedures. Receive preclinical equipment (instruments, bolts). Intro to pre-clinical forms and equipment. Intro/practice client & operator positions.',
+  '2026-10-15': 'Intro/practice client & operator positions, grasp, and mirror use on manikins. Practice indirect vision exercises. *Review videos from www.jblearning.com',
+  '2026-10-20': `Intro to the probe. Practice client/operator positions, grasp, and mirror use on manikins. ${VID}`,
+  '2026-10-22': `Practice probe, client/operator positions, and mirror use on manikins. ${VID}`,
+  '2026-10-27': PRACTICE,
+  '2026-10-29': `Intro to explorers: EXD 11/12 (posterior teeth), Shepherd Hook. ${PRACTICE} ${VID}`,
+  '2026-11-03': `Intro to explorers: EXD 11/12 (anterior teeth). ${PRACTICE}`,
+  '2026-11-05': `Competency testing: Probe. ${PRACTICE}`,
+  '2026-11-10': `Intro to the anterior and posterior sickle scalers, H5/33 and 204S. ${PRACTICE} ${VID}`,
+  '2026-11-12': PRACTICE,
+  '2026-11-17': `Intro to the G1/2. ${PRACTICE} ${VID}`,
+  '2026-11-19': `Competency testing: Explorers. ${PRACTICE}`,
+  '2026-11-24': `Intro to G11/12 and G13/14. ${VID}`,
+  '2026-11-26': PRACTICE,
+  '2026-12-01': `Intro to sharpening techniques. ${PRACTICE}`,
+  '2026-12-03': `Competency testing: Sickle scalers. ${PRACTICE}`,
+  '2026-12-08': `Intro to universal curet. CADH emergency procedures (tour – Grp A). ${PRACTICE} ${VID}`,
+  '2026-12-10': `CADH emergency procedures (tour – Grp B). ${PRACTICE}`,
+  '2026-12-15': `Competency testing: Sharpening techniques. ${PRACTICE}`,
+  '2026-12-17': `Competency testing: 2 of G1/2, G11/12, G13/14. ${PRACTICE} Midterm meetings come next (schedule to be communicated).`,
+  '2027-01-05': `Demonstration/practice: vital signs (blood pressure, pulse, respiration). Intro to health history. ${PRACTICE}`,
+  '2027-01-07': `Review/practice medical history and emergency procedures. ${PRACTICE}`,
+  '2027-01-12': `Intro to oral hygiene aids. ${PRACTICE}`,
+  '2027-01-14': `Competency testing: Universal Curet. ${PRACTICE}`,
+  '2027-01-19': `Comprehensive instrumentation assessment preparation. ${PRACTICE}`,
+  '2027-01-21': `Competency testing: Emergency procedures. ${PRACTICE}`,
+  '2027-01-26': 'Practice all instruments for the comprehensive instrumentation test.',
+  '2027-01-28': 'Comprehensive Instrument testing: Scenario (2 hrs).',
+  '2027-02-02': 'Comprehensive Instrument testing: Scenario (2 hrs).',
+  '2027-02-04': 'Practice IPAC (dental unit & instrument reprocessing) (clinic) — practice session 1. Return bolts (if not retesting instruments).',
+  '2027-02-06': 'Practice IPAC (dental unit & instrument reprocessing). Intro: intra-oral camera. Medical emergency role-play activity (clinic) — practice session 2. Return bolts (if not retesting instruments).',
+  '2027-02-09': 'Competency testing: IPAC (clinic).',
+  '2027-02-11': 'Competency re-testing (as required). Instrumentation feedback (as required) (clinic & lab). Week 17 Level 1 Mentorship Clinical Observation with Level 3 Mentor (clinic): A1, A2 7:30 am–1:00 pm; B1, B2 2:00–7:30 pm.',
+  '2027-02-16': 'Competency/instrumentation re-testing (as required). IPAC remedial (as needed) (clinic & lab). Return bolts after instrument re-testing.',
+  '2027-02-17': 'Integration: Partner Care preparation — 2 in-person sessions, 8:00–11:00 am & 11:30 am–2:30 pm (lab).',
+  '2027-02-18': 'Week 18 Level 1 Mentorship Clinical Observation with Level 3 Mentor (clinic): B3, B4 7:30 am–1:00 pm; A3, A4 2:00–7:30 pm. Instrumentation remediation & re-testing (if required).',
+  '2027-02-20': 'Partner Care: Clinic #1 — assessment, dental hygiene diagnosis and planning.',
+  '2027-02-25': 'Partner Care: Clinic #2 — assessment, dental hygiene diagnosis and planning.',
+  '2027-02-27': 'Partner Care: Clinic #3 — assessment, dental hygiene diagnosis and planning.',
+  '2027-03-04': 'Partner Care: Clinic #4 — assessment, dental hygiene diagnosis and planning.',
+  '2027-03-06': 'Partner Care: Clinic #5 — dental hygiene diagnosis, planning.',
+  '2027-03-09': 'Partner Care: Clinic #6 (final session) — dental hygiene diagnosis, planning.',
+};
+function seedOutline() {
+  let changed = 0;
+  OUTLINE_DEADLINES.forEach(([date, start, title, kind, notes], i) => {
+    const id = `t_dh101_${String(i + 1).padStart(2, '0')}`;
+    if (data.deleted[id] || data.items.some((x) => x.id === id)) return;
+    const exam = kind === 'exam';
+    const type = exam ? 'exam' : kind === 'clinic' ? 'class' : 'assignment';
+    if (findDuplicate({ title, date, course: 'DH101', kind: type })) return; // already in the calendar
+    data.items.push({ id, type, task: true, exam, kind: exam ? 'exam' : 'assignment', title, course: 'DH101', date, start, end: '', mode: 'in-person',
+      priority: 'normal', notes, subtasks: [], attachments: [], status: 'not-started', done: false, grade: '', weight: '', createdAt: 1, updatedAt: 1 });
+    changed++;
+  });
+  // Add each day's outline text to that day's DH 101 sessions once, after any note already written there.
+  for (const s of BASE_L1?.sessions || []) {
+    const text = s.code === 'DH101' && OUTLINE_NOTES[s.date];
+    if (!text) continue;
+    const m = getMeta(s.id);
+    if (m.outline || (m.note || '').includes(text)) continue;
+    setMeta(s.id, { note: m.note ? `${m.note}\n${text}` : text, outline: 1 });
+    changed++;
+  }
+  return changed;
+}
 function seedDeadlines() {
   let added = 0;
   STARTER_DEADLINES.forEach(([course, title, date, start, status], i) => {
@@ -3281,6 +3437,7 @@ function seedDeadlines() {
     const it = data.items.find((x) => x.id === id);
     if (it && !it.start && it.updatedAt === 1) { it.start = start; it.updatedAt = 2; added++; }
   }
+  added += seedOutline();
   if (added) commit({ rerender: false });
 }
 
