@@ -21,6 +21,11 @@ A password-protected timetable and school-year tracker for the dental hygiene pr
 - **Month, Agenda and Courses views.** The Agenda is searchable and can be filtered by course.
   Each Courses card shows instructors, sessions done, the next class, the next exam, attendance and the
   weighted grade so far.
+- **Edit timetable classes.** Open any class and choose **✎ Edit class** to change its title, date, start/end time, in person /
+  online, room or details, mark it as an exam/test, or mark it cancelled (it stays on the calendar, faded and struck through).
+  Changes can apply to just that class or to it and every later class in the same weekly slot. You can also drag a class to
+  another time or day, or drag its bottom edge, in the week grid. Edits sit on top of the official timetable, sync to your other
+  devices, and **Reset to timetable** undoes them; notes, ticks and carpool stay with the class.
 - **Tracking.** Click any class to tick *Prepared*, *Attended* and *Notes reviewed*, and to write
   class notes for that session. The notes then appear inside that class's time block on the timetable
   (and on printouts).
@@ -76,6 +81,11 @@ A password-protected timetable and school-year tracker for the dental hygiene pr
 - **Notes on phones** open as a list of cards (pinned first, with a two-line preview, course and when it was last edited), a
   swipeable row of course chips, and search behind 🔍. Tapping a note opens a full-screen editor with a *‹ Notes* back button,
   📌 pin, delete and a course picker; the floating button hides while you write.
+- **Week grid on phones.** The Week tab has a *List / Grid* switch. The grid scrolls sideways; tap an empty slot to add an event, or
+  press and hold (about half a second) and drag to set its length, or to move your own events and classes. In the list, each day has
+  a **+** button.
+- **Finished tasks fold away by week.** In *All* (phone and desktop) each week's finished tasks collapse into one "✓ N done" row you can
+  open or close; in *Done* the weeks start open. Your choice is remembered on that device.
 - **Made for phones.** Below 760 px wide the views move to a bottom tab bar, the header shrinks to the logo and a ☰ menu, and
   the menu slides in from the side with LEVEL UP!, the level switcher, Import, Print, Settings, Entry types and Sign out.
   Dialogs open as bottom sheets with the Save button always in reach (drag the handle down to dismiss), and the Month view becomes

@@ -159,26 +159,15 @@ function buildLevelSchedule(n, L, skip = new Set()) {
   return { term: { name: `Level ${n}`, program: BASE_L1.term.program, level: n, levels: MAX_LEVEL, start: L.start, end: L.end }, courses, sessions };
 }
 
-let levelSig = '';
-// (Re)build SCHED and its indexes for the level being viewed; cheap no-op if nothing changed.
-function ensureLevel() {
-  let n = currentLevel();
-  if (!levelAvailable(n)) n = 1;
-  const L = data.levels?.[n] || null;
-  const sig = n + ':' + (L ? L.updatedAt : 0) + ':' + Object.values(data.levels || {}).map((x) => x.updatedAt).join(',');
-  if (sig === levelSig) return false;
-  const changedLevel = !levelSig.startsWith(n + ':');
-  levelSig = sig;
-  if (n === 1) {
-    // Official timetable plus any extra courses/periods added for Level 1.
-    const closed = new Set(BASE_L1.sessions.filter((x) => x.kind === 'closure').map((x) => x.date));
-    const extra = L ? buildLevelSchedule(1, { ...L, start: BASE_L1.term.start, end: BASE_L1.term.end }, closed) : null;
-    SCHED = !extra ? BASE_L1 : {
-      term: BASE_L1.term,
-      courses: { ...BASE_L1.courses, ...extra.courses },
-      sessions: [...BASE_L1.sessions, ...extra.sessions].sort((a, b) => (a.date + (a.start || '')).localeCompare(b.date + (b.start || ''))),
-    };
-  } else SCHED = buildLevelSchedule(n, L);
+let levelSig = '', ovSig = '', LEVEL_SCHED = null;
+// Your edits to timetable classes live in sessionMeta[id].ov and are laid over the official timetable.
+const overrideSig = () => Object.entries(data.sessionMeta).filter(([, m]) => m.ovAt).map(([k, m]) => k + m.ovAt).join(',');
+function indexSessions() {
+  const sessions = LEVEL_SCHED.sessions.map((s) => {
+    const ov = data.sessionMeta[s.id]?.ov;
+    return ov && Object.keys(ov).length ? { ...s, ...ov, edited: true, base: s } : s;
+  }).sort((a, b) => (a.date + (a.start || '')).localeCompare(b.date + (b.start || '')));
+  SCHED = { ...LEVEL_SCHED, sessions };
   byDate.clear();
   byId.clear();
   for (const s of SCHED.sessions) {
@@ -186,6 +175,32 @@ function ensureLevel() {
     byDate.get(s.date).push(s);
     byId.set(s.id, s);
   }
+}
+// (Re)build SCHED and its indexes for the level being viewed; cheap no-op if nothing changed.
+function ensureLevel() {
+  let n = currentLevel();
+  if (!levelAvailable(n)) n = 1;
+  const L = data.levels?.[n] || null;
+  const sig = n + ':' + (L ? L.updatedAt : 0) + ':' + Object.values(data.levels || {}).map((x) => x.updatedAt).join(',');
+  const ovs = overrideSig();
+  if (sig === levelSig) {
+    if (ovs !== ovSig) { ovSig = ovs; indexSessions(); }
+    return false;
+  }
+  const changedLevel = !levelSig.startsWith(n + ':');
+  levelSig = sig;
+  if (n === 1) {
+    // Official timetable plus any extra courses/periods added for Level 1.
+    const closed = new Set(BASE_L1.sessions.filter((x) => x.kind === 'closure').map((x) => x.date));
+    const extra = L ? buildLevelSchedule(1, { ...L, start: BASE_L1.term.start, end: BASE_L1.term.end }, closed) : null;
+    LEVEL_SCHED = !extra ? BASE_L1 : {
+      term: BASE_L1.term,
+      courses: { ...BASE_L1.courses, ...extra.courses },
+      sessions: [...BASE_L1.sessions, ...extra.sessions].sort((a, b) => (a.date + (a.start || '')).localeCompare(b.date + (b.start || ''))),
+    };
+  } else LEVEL_SCHED = buildLevelSchedule(n, L);
+  ovSig = ovs;
+  indexSessions();
   for (const k of Object.keys(CUSTOM_COLORS)) delete CUSTOM_COLORS[k];
   for (const k of Object.keys(COURSE_INSTR)) delete COURSE_INSTR[k];
   for (const [lv, def] of Object.entries(data.levels || {}).sort((a, b) => (+a[0] === n) - (+b[0] === n))) {
@@ -555,6 +570,7 @@ function minutesOf(e) {
 /* App shell                                                           */
 /* ================================================================== */
 const ui = {
+  weekMode: (() => { try { return localStorage.getItem('l1s:wkmode') || 'list'; } catch { return 'list'; } })(),
   view: 'week',
   cursor: new Date(),
   agendaDays: 21,
@@ -705,7 +721,7 @@ function weekSummary(days) {
   }
   const due = days.reduce((a, iso) => a + itemsOn(iso).filter((i) => i.task && !itemDoneOn(i, iso)).length, 0);
   const h = (m) => `${+(m / 60).toFixed(1)} h`;
-  return `<span class="muted small">${h(campus)} on campus · ${h(online)} online${exams ? ` · <b style="color:var(--danger)">${exams} exam/test</b>` : ''}${due ? ` · ${due} due` : ''}</span>`;
+  return `<span class="muted small wk-sum">${h(campus)} on campus · ${h(online)} online${exams ? ` · <b style="color:var(--danger)">${exams} exam/test</b>` : ''}${due ? ` · ${due} due` : ''}</span>`;
 }
 
 function layoutColumns(evs) {
@@ -736,7 +752,7 @@ function evBlockHTML(e, top, height) {
   const meta = e.src === 's' ? getMeta(e.id) : {};
   const note = ((e.src === 's' ? meta.note : e.item?.notes) || '').trim();
   const cls = ['ev', modeClass(e.mode), e.rel === 'other' ? 'other' : '', e.kind === 'exam' || e.kind === 'test' ? e.kind : '', e.src === 'i' && e.done ? 'is-done' : '',
-    e.src === 'i' ? 'personal' : '', meta.attended ? 'attended' : ''].join(' ');
+    e.src === 'i' ? 'personal' : '', meta.attended ? 'attended' : '', e.cancelled ? 'cancelled' : '', e.edited ? 'edited' : ''].join(' ');
   const w = 100 / (e._lanes || 1), l = (e._lane || 0) * w;
   const mid = height >= 34;
   const code = e.code ? codeLabel(e.code) : e.src === 'i' ? esc(typeOf(e.item).name) : '';
@@ -750,7 +766,8 @@ function evBlockHTML(e, top, height) {
   const detailLines = detail ? Math.max(0, Math.min(note ? 2 : 4, Math.floor((room - 2) / 12))) : 0;
   room -= detailLines ? detailLines * 12 + 2 : 0;
   const noteLines = note ? Math.floor(room / 12) : 0;
-  const draggable = e.src === 'i' && isTimed(e);
+  // Your own entries and (one at a time) timetable classes can be dragged to move or resize them.
+  const draggable = isTimed(e) && (e.src === 'i' || (e.src === 's' && !isClosure(e)));
   return `<button class="${cls}" data-open="${esc(openKey(e))}" ${draggable ? 'data-drag="1"' : ''} aria-label="${esc(label)}${note ? '. Notes: ' + esc(note.slice(0, 200)) : ''}"
       title="${note ? esc(note.slice(0, 400)) : ''}"
       style="--c:${entryColor(e)};top:${top}px;height:${height - 2}px;left:calc(${l}% + 2px);width:calc(${w}% - 4px)">
@@ -798,7 +815,9 @@ function renderWeek(v) {
   const today = D.today();
   const header = weekNav(title, weekSummary(days));
 
-  if (narrowMQ.matches) return renderWeekList(v, header, days, today);
+  // Phones: a day list by default, or the full grid (scrolls sideways) for tapping / long-press-dragging new events.
+  const phoneToggle = narrowMQ.matches ? `<div class="seg wk-mode" role="group" aria-label="Layout"><button data-wkmode="list" aria-pressed="${ui.weekMode !== 'grid'}">List</button><button data-wkmode="grid" aria-pressed="${ui.weekMode === 'grid'}">Grid</button></div>` : '';
+  if (narrowMQ.matches && ui.weekMode !== 'grid') return renderWeekList(v, phoneToggle + header, days, today);
 
   const perDay = days.map((iso) => entriesOn(iso));
   const timed = perDay.flat().filter(isTimed);
@@ -837,19 +856,21 @@ function renderWeek(v) {
       ${now}${evs.map((e) => evBlockHTML(e, px(D.mins(e.start)), px(D.mins(e.end)) - px(D.mins(e.start)))).join('')}</div>`;
   }).join('');
 
-  v.innerHTML = withLegend(`${header}
+  v.innerHTML = withLegend(`${phoneToggle}${header}
     <div class="card week"><div class="week-inner" style="--cols:${cols}">
       <div class="wk-head"><div></div>${head}</div>
       <div class="wk-allday"><div class="lbl">Due / all day</div>${allday}</div>
       <div class="wk-body" style="height:${px(hi) + PAD}px;--pad:${PAD}px"><div class="wk-times">${times}</div>${colsHTML}</div>
     </div></div>
-    <div class="muted small grid-hint">Tip: drag on an empty part of the grid to add an event · drag your own events to move them, or their bottom edge to change the length · drag a due date to another day to reschedule it.</div>
+    <div class="muted small grid-hint">${narrowMQ.matches ? 'Tap an empty slot to add an event · press and hold, then drag, to choose its length or to move your own events and classes · swipe sideways for the rest of the week.<br>' : ''}Tip: drag on an empty part of the grid to add an event · drag your own events to move them, or their bottom edge to change the length · drag a due date to another day to reschedule it.</div>
     `);
   bindWeekGrid(v, { lo, hi, slot, PAD });
 }
 
 /* ---- Google Calendar-style grid interactions ---- */
-let suppressClickUntil = 0;
+let suppressClickUntil = 0, touchHolding = false;
+// While a press-and-hold drag is running, stop the page from scrolling under the finger.
+document.addEventListener('touchmove', (e) => { if (touchHolding) e.preventDefault(); }, { passive: false });
 function bindWeekGrid(root, g) {
   const body = $('.wk-body', root);
   if (!body) return;
@@ -917,13 +938,44 @@ function bindWeekGrid(root, g) {
   }
 
   body.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0 || e.pointerType === 'touch') return; // touch: tap handled by click below
+    if (e.pointerType === 'touch') return touchHold(e); // touch: tap = click below, press-and-hold = drag
+    if (e.button !== 0) return;
     const evEl = e.target.closest('.ev');
     if (evEl) { if (evEl.dataset.drag) dragEvent(e, evEl, !!e.target.closest('.ev-resize')); return; }
     const col = e.target.closest('.wk-col');
     if (col) dragCreate(e, col);
   });
+  body.addEventListener('contextmenu', (e) => { if (e.pointerType === 'touch' || touchHolding) e.preventDefault(); });
+  // Press and hold (~0.4 s) on a phone or tablet, then drag: on an empty slot to set the new event's length,
+  // on your own event or a class to move it. Moving the finger before that just scrolls.
+  function touchHold(e) {
+    const x0 = e.clientX, y0 = e.clientY;
+    let timer = 0;
+    const stop = () => {
+      clearTimeout(timer);
+      window.removeEventListener('pointermove', watch);
+      window.removeEventListener('pointerup', stop);
+      window.removeEventListener('pointercancel', stop);
+    };
+    const watch = (ev) => { if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > 8) stop(); };
+    timer = setTimeout(() => {
+      stop();
+      touchHolding = true;
+      navigator.vibrate?.(12);
+      const release = () => { touchHolding = false; suppressClickUntil = Date.now() + 500; window.removeEventListener('pointerup', release); window.removeEventListener('pointercancel', release); };
+      window.addEventListener('pointerup', release);
+      window.addEventListener('pointercancel', release);
+      const evEl = e.target.closest('.ev');
+      if (evEl) { if (evEl.dataset.drag) dragEvent(e, evEl, !!e.target.closest('.ev-resize')); return; }
+      const col = e.target.closest('.wk-col');
+      if (col) dragCreate(e, col);
+    }, 400);
+    window.addEventListener('pointermove', watch);
+    window.addEventListener('pointerup', stop);
+    window.addEventListener('pointercancel', stop);
+  }
   body.addEventListener('click', (e) => {
+    if (Date.now() < suppressClickUntil) return;
     if (e.pointerType !== 'touch' && !(e.detail === 0 || e.sourceCapabilities?.firesTouchEvents)) return;
     const col = e.target.closest('.wk-col');
     if (!col || e.target.closest('.ev')) return;
@@ -959,9 +1011,11 @@ function bindWeekGrid(root, g) {
   }
 
   function dragEvent(e, el, resize) {
-    const [id, occ] = el.dataset.open.slice(2).split('|');
-    const it = data.items.find((i) => i.id === id);
+    const isSes = el.dataset.open.startsWith('s:');
+    const [id, occ0] = el.dataset.open.slice(2).split('|');
+    const it = isSes ? byId.get(id) : data.items.find((i) => i.id === id);
     if (!it || !it.start || !it.end) return;
+    const occ = isSes ? it.date : occ0;
     e.preventDefault();
     const s0 = D.mins(it.start), e0 = D.mins(it.end), dur = e0 - s0;
     let col = el.closest('.wk-col'), ns = s0, ne = e0, moved = false;
@@ -990,6 +1044,11 @@ function bindWeekGrid(root, g) {
       suppressClickUntil = Date.now() + 400;
       const date = col.dataset.day;
       if (date === occ && ns === s0 && ne === e0) return render();
+      if (isSes) {
+        setSessionOv(id, { date, start: D.hm(ns), end: D.hm(ne) });
+        commit();
+        return toast('Class moved — open it to undo or reset to the timetable');
+      }
       moveItem(it, occ, date, D.hm(ns), D.hm(ne));
     };
     window.addEventListener('pointermove', move);
@@ -1099,7 +1158,7 @@ function rowEvHTML(e) {
       <div class="meta">${it.course ? `<span class="chip crs" style="--c:${entryColor(e)}">${codeLabel(it.course)}</span>` : ''}<span>${esc(typeOf(it).name)}</span>${kindChip(e)}</div></div>${doneBox(e)}</div>`;
   }
   const meta = e.src === 's' ? getMeta(e.id) : {};
-  return `<div class="row-ev ${modeClass(e.mode)} ${e.rel === 'other' ? 'other' : ''} ${tracksAttendance(e) || e.item?.task ? 'has-att' : ''}" data-open="${esc(openKey(e))}" style="--c:${entryColor(e)}">${attendBox(e) || doneBox(e)}
+  return `<div class="row-ev ${modeClass(e.mode)} ${e.rel === 'other' ? 'other' : ''} ${e.cancelled ? 'cancelled' : ''} ${tracksAttendance(e) || e.item?.task ? 'has-att' : ''}" data-open="${esc(openKey(e))}" style="--c:${entryColor(e)}">${attendBox(e) || doneBox(e)}
     <div class="tm">${fmtRange(e.start, e.end)}</div>
     <div><div class="ti">${e.code ? `<span style="color:${entryColor(e)}">${codeLabel(e.code)}</span> ` : ''}${esc(entryTitle(e))}</div>
     <div class="meta">${modeChip(e.mode)}${carpoolChip(e)}${kindChip(e)}${groupChip(e)}${e.detail ? `<span>${esc(e.detail)}</span>` : ''}</div>
@@ -1113,7 +1172,7 @@ function renderWeekList(v, header, days, today) {
     const tag = dayTag(iso);
     if (!list.length && D.parse(iso).getDay() === 0) return '';
     return `<section class="card daycard ${iso === today ? 'today' : ''}">
-      <h3>${fmtDate(iso, { long: true })} ${tag ? `<span class="daytag"><span class="chip ${tag.cls}">${tag.label}</span></span>` : ''}</h3>
+      <h3>${fmtDate(iso, { long: true })} ${tag ? `<span class="daytag"><span class="chip ${tag.cls}">${tag.label}</span></span>` : ''}<button type="button" class="day-add" data-add-date="${iso}" aria-label="Add an event on ${esc(fmtDate(iso))}">${ICON.plus}</button></h3>
       ${list.length ? list.map(rowEvHTML).join('') : '<div class="muted small">Nothing scheduled</div>'}
     </section>`;
   }).join('')}</div>`);
@@ -1368,6 +1427,29 @@ function openTaskFilters(v) {
     closeModal(); renderTasks(v);
   };
 }
+// Finished tasks fold into one "✓ N done" row per week. In "All" a week's row starts closed, in "Done" open;
+// whatever you toggle is remembered on this device.
+const doneWeekToggled = new Set((() => { try { return JSON.parse(localStorage.getItem('l1s:donewk') || '[]'); } catch { return []; } })());
+const doneWeekKey = (wk) => `${ui.taskFilter === 'done' ? 'done' : 'all'}:${wk}`;
+const doneWeekOpen = (wk) => (ui.taskFilter === 'done') !== doneWeekToggled.has(doneWeekKey(wk));
+function toggleDoneWeek(wk, el) {
+  const k = doneWeekKey(wk);
+  if (doneWeekToggled.has(k)) doneWeekToggled.delete(k); else doneWeekToggled.add(k);
+  try { localStorage.setItem('l1s:donewk', JSON.stringify([...doneWeekToggled].slice(-300))); } catch {}
+  const on = doneWeekOpen(wk);
+  $$(`[data-donewk="${wk}"]`).forEach((b) => b.setAttribute('aria-expanded', String(on)));
+  $$(`[data-donewk-body="${wk}"]`).forEach((x) => x.classList.toggle('open', on));
+  $$(`tr[data-donewk-row="${wk}"]`).forEach((x) => (x.hidden = !on));
+}
+const weekOf = (iso) => D.iso(D.sow(D.parse(iso)));
+function weekRange(wk) {
+  const a = D.parse(wk), b = D.add(a, 6);
+  return a.getMonth() === b.getMonth() ? `${MON3[a.getMonth()]} ${a.getDate()} – ${b.getDate()}` : `${MON3[a.getMonth()]} ${a.getDate()} – ${MON3[b.getMonth()]} ${b.getDate()}`;
+}
+function weekName(wk) {
+  const d = D.diffDays(weekOf(D.today()), wk) / 7;
+  return d === 0 ? 'This week' : d === 1 ? 'Next week' : d === -1 ? 'Last week' : `Week of ${weekRange(wk)}`;
+}
 function renderTasksMobile(v, { all, rows, open, overdue, weekDue, doneCount, pct, today, weekEnd }) {
   const tomorrow = D.iso(D.add(D.parse(today), 1));
   const nextEnd = D.iso(D.add(D.parse(weekEnd), 7));
@@ -1388,7 +1470,7 @@ function renderTasksMobile(v, { all, rows, open, overdue, weekDue, doneCount, pc
     if (!groups.has(k)) groups.set(k, { label, rows: [] });
     groups.get(k).rows.push(r);
   }
-  // Overdue first, undated last; finished items stay in their date group (struck through).
+  // Overdue first, undated last.
   const order = [...groups.keys()].sort((a, b) => (a === 'overdue' ? -1 : b === 'overdue' ? 1 : a === 'nodate' ? 1 : b === 'nodate' ? -1 : 0));
   const card = (r) => {
     const it = r.item, done = r.status === 'done';
@@ -1408,6 +1490,30 @@ function renderTasksMobile(v, { all, rows, open, overdue, weekDue, doneCount, pc
       <button type="button" class="tk-st st-${r.status}" data-tkstatus="${r.key}|${r.status}" aria-label="Status: ${STATUS[r.status]} — tap to change">${STATUS_SHORT[r.status]}</button>
     </div>`;
   };
+  const section = (label, list, cls = '', extra = '') => `<section class="tk-group ${cls}"><h3 class="tk-gh"><span>${label}</span>${extra}<span class="tk-n">${list.length}</span></h3>${list.map(card).join('')}</section>`;
+  const doneStrip = (wk, done) => !done.length ? '' : `<button type="button" class="tk-donebar" data-donewk="${wk}" aria-expanded="${doneWeekOpen(wk)}">
+      <span class="tk-dck">✓</span><span>${done.length} done</span><span class="tk-wr">${weekRange(wk)}</span><svg class="chev" viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5l6 5-6 5"/></svg></button>
+    <div class="tk-donebody ${doneWeekOpen(wk) ? 'open' : ''}" data-donewk-body="${wk}"><div class="tk-doneinner">${done.map(card).join('')}</div></div>`;
+  function listHTML() {
+    if (ui.taskFilter === 'open') return order.map((k) => section(groups.get(k).label, groups.get(k).rows, k === 'overdue' ? 'is-over' : '')).join('');
+    // All / Done: one section per week; that week's finished tasks fold into a "✓ N done" row.
+    const over = rows.filter((r) => r.status !== 'done' && r.date && r.date < today);
+    const weeks = new Map();
+    for (const r of rows) {
+      if (!r.date || (r.status !== 'done' && r.date < today)) continue;
+      const wk = weekOf(r.date);
+      if (!weeks.has(wk)) weeks.set(wk, []);
+      weeks.get(wk).push(r);
+    }
+    const keys = [...weeks.keys()].sort();
+    if (ui.taskFilter === 'done') keys.reverse();
+    return (over.length ? section('Overdue', over, 'is-over') : '') + keys.map((wk) => {
+      const list = weeks.get(wk), openL = list.filter((r) => r.status !== 'done'), doneL = list.filter((r) => r.status === 'done');
+      const name = weekName(wk);
+      return `<section class="tk-group"><h3 class="tk-gh"><span>${name}</span>${name.startsWith('Week of') ? '' : `<span class="tk-wr">${weekRange(wk)}</span>`}<span class="tk-n">${openL.length || '✓'}</span></h3>
+        ${openL.map(card).join('')}${doneStrip(wk, doneL)}</section>`;
+    }).join('') + (rows.some((r) => !r.date) ? section('No date', rows.filter((r) => !r.date)) : '');
+  }
   const filtersOn = (ui.taskCourse ? 1 : 0) + (ui.taskKind ? 1 : 0) + (ui.taskTimetable ? 0 : 1);
   const chips = [
     ui.taskCourse && `<button class="tk-chip" data-tkclear="course">${codeLabel(ui.taskCourse)} ✕</button>`,
@@ -1430,12 +1536,7 @@ function renderTasksMobile(v, { all, rows, open, overdue, weekDue, doneCount, pc
       <div><b>${pct}%</b><span>${doneCount}/${all.length} done</span></div>
       <div class="progress"><i style="width:${pct}%"></i></div>
     </div>
-    ${rows.length ? order.map((k) => {
-      const g = groups.get(k);
-      const head = `<span>${g.label}</span><span class="tk-n">${g.rows.length}</span>`;
-      const inner = g.rows.map(card).join('');
-      return `<section class="tk-group ${k === 'overdue' ? 'is-over' : ''}"><h3 class="tk-gh">${head}</h3>${inner}</section>`;
-    }).join('') : `<div class="card empty">${all.length ? (ui.taskFilter === 'open' ? 'All caught up 🎉' : 'Nothing matches these filters.') : 'No deadlines yet — tap the button below to add one.'}</div>`}`;
+    ${rows.length ? listHTML() : `<div class="card empty">${all.length ? (ui.taskFilter === 'open' ? 'All caught up 🎉' : 'Nothing matches these filters.') : 'No deadlines yet — tap the button below to add one.'}</div>`}`;
 
   $$('[data-tf]', v).forEach((b) => (b.onclick = () => { ui.taskFilter = b.dataset.tf; renderTasks(v); }));
   $('#tk-filter-btn').onclick = () => openTaskFilters(v);
@@ -1466,7 +1567,7 @@ function renderTasks(v) {
   if (narrowMQ.matches) return renderTasksMobile(v, { all, rows, open, overdue, weekDue, doneCount, pct, today, weekEnd });
 
   let todayMarked = false;
-  const body = rows.map((r) => {
+  const rowHTML = (r, attrs = '') => {
     let divider = '';
     if (!todayMarked && r.date && r.date >= today) {
       todayMarked = true;
@@ -1476,7 +1577,7 @@ function renderTasks(v) {
     const c = r.code ? courseColor(r.code) : 'var(--PERSONAL)';
     const it = r.item;
     const subs = it?.subtasks || [];
-    return `${divider}<tr class="${r.status === 'done' ? 'is-done' : ''} ${r.src === 's' ? 'from-tt' : ''}">
+    return `${divider}<tr class="${r.status === 'done' ? 'is-done' : ''} ${r.src === 's' ? 'from-tt' : ''}" ${attrs}>
       <td class="cls">${r.code ? `<span class="chip crs" style="--c:${c}">${codeLabel(r.code)}</span><span class="cls-name">${esc(COURSE_SHORT[r.code] || '')}</span>` : '<span class="muted">—</span>'}</td>
       <td><div class="nm">${r.src === 'i' && it.task ? doneBox(itemToEntry(it, it.date)) : ''}<button class="link" data-open="${r.key}">${esc(r.name)}</button>
         ${r.kind === 'exam' || r.kind === 'test' ? kindChip({ kind: r.kind === 'test' ? 'test' : 'exam' }) : ''}
@@ -1491,6 +1592,21 @@ function renderTasks(v) {
       <td><input class="cell" data-row="${r.key}" data-field="grade" value="${esc(r.grade)}" placeholder="—" aria-label="Grade"></td>
       <td><input class="cell" data-row="${r.key}" data-field="weight" value="${esc(r.weight)}" placeholder="—" inputmode="decimal" aria-label="Weight (%)"></td>
     </tr>`;
+  };
+  // In All / Done, each week's finished rows fold behind one "✓ N finished" row.
+  const buckets = [];
+  for (const r of rows) {
+    const wk = r.date ? weekOf(r.date) : 'nodate';
+    if (buckets.at(-1)?.wk !== wk) buckets.push({ wk, rows: [] });
+    buckets.at(-1).rows.push(r);
+  }
+  const body = buckets.map(({ wk, rows: rs }) => {
+    const doneR = rs.filter((r) => r.status === 'done');
+    if (ui.taskFilter === 'open' || wk === 'nodate' || !doneR.length) return rs.map((r) => rowHTML(r)).join('');
+    const on = doneWeekOpen(wk);
+    return rs.filter((r) => r.status !== 'done').map((r) => rowHTML(r)).join('')
+      + `<tr class="done-sum"><td colspan="6"><button type="button" class="tk-donebar" data-donewk="${wk}" aria-expanded="${on}"><span class="tk-dck">✓</span><span>${doneR.length} finished</span><span class="tk-wr">${weekName(wk)}${weekName(wk).startsWith('Week of') ? '' : ` · ${weekRange(wk)}`}</span><svg class="chev" viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5l6 5-6 5"/></svg></button></td></tr>`
+      + doneR.map((r) => rowHTML(r, `data-donewk-row="${wk}" ${on ? '' : 'hidden'}`)).join('');
   }).join('');
 
   v.innerHTML = `<div class="toolbar">
@@ -1722,7 +1838,7 @@ function newNote(course = '', title = '') {
 const doneKey = (code) => `${currentLevel()}:${code}`;
 function courseStatus(code) {
   const manual = (data.settings.completedCourses || []).includes(doneKey(code));
-  const ses = SCHED.sessions.filter((s) => s.code === code && !isClosure(s));
+  const ses = SCHED.sessions.filter((s) => s.code === code && !isClosure(s) && !s.cancelled);
   const last = ses[ses.length - 1];
   const today = D.today();
   const ended = !!last && (last.date < today || (last.date === today && D.mins(last.end || '23:59') <= D.nowMin()));
@@ -1748,7 +1864,7 @@ function setCourseDone(code, on) {
 function renderCourses(v) {
   const today = D.today(), now = D.nowMin();
   const cards = Object.entries(SCHED.courses).map(([code, name]) => {
-    const ses = SCHED.sessions.filter((s) => s.code === code && relevance(s) !== 'other');
+    const ses = SCHED.sessions.filter((s) => s.code === code && relevance(s) !== 'other' && !s.cancelled);
     const past = ses.filter((s) => s.date < today || (s.date === today && D.mins(s.end) <= now));
     const attended = past.filter((s) => getMeta(s.id).attended).length;
     const upcoming = ses.filter((s) => !past.includes(s));
@@ -1917,6 +2033,70 @@ const modalHead = (title, sub = '') => `<header><span class="bar"></span><div st
   <button class="icon-btn" data-close aria-label="Close">${ICON.x.replace('<svg', '<svg style="width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2"')}</button></header>`;
 
 /* ---- Class session details ---- */
+// Save changes to one timetable class; only the fields that differ from the official timetable are kept.
+const OV_FIELDS = ['date', 'start', 'end', 'title', 'detail', 'mode', 'kind', 'cancelled'];
+function setSessionOv(id, patch) {
+  const base = LEVEL_SCHED.sessions.find((x) => x.id === id);
+  if (!base) return;
+  const ov = { ...(getMeta(id).ov || {}), ...patch };
+  for (const f of OV_FIELDS) {
+    if (!(f in ov)) continue;
+    const v = ov[f], b = base[f];
+    if (f === 'cancelled' ? !v : (v ?? '') === (b ?? '')) delete ov[f];
+  }
+  setMeta(id, { ov: Object.keys(ov).length ? ov : null, ovAt: Date.now() });
+}
+function openSessionEditor(id) {
+  const s = byId.get(id);
+  const base = LEVEL_SCHED.sessions.find((x) => x.id === id);
+  if (!s || !base) return;
+  const later = LEVEL_SCHED.sessions.filter((x) => x.id !== id && x.code === base.code && x.date > base.date && x.start === base.start
+    && D.parse(x.date).getDay() === D.parse(base.date).getDay() && JSON.stringify(x.group || null) === JSON.stringify(base.group || null));
+  openModal(`${modalHead(`Edit class`, `${s.code ? codeLabel(s.code) + ' · ' : ''}Official timetable: ${fmtDate(base.date, { long: true })} · ${fmtRange(base.start, base.end)}`)}
+    <form class="body" id="se-form" autocomplete="off">
+      <label class="field">Title<input type="text" id="se-title" value="${esc(s.title)}"></label>
+      <div class="grid-3">
+        <label class="field">Date<input type="date" id="se-date" value="${s.date}"></label>
+        <label class="field">Start<input type="time" id="se-start" value="${s.start || ''}"></label>
+        <label class="field">End<input type="time" id="se-end" value="${s.end || ''}"></label>
+      </div>
+      <div class="grid-2">
+        <label class="field">Where<select id="se-mode"><option value="in-person">In person</option><option value="online">Online</option><option value="unspecified">Location TBA</option></select></label>
+        <label class="field">Type<select id="se-kind"><option value="class">Class</option><option value="exam">Exam</option><option value="test">Test</option></select></label>
+      </div>
+      <label class="field">Room / details<input type="text" id="se-detail" value="${esc(s.detail || '')}" placeholder="Room, clinic, Zoom link…"></label>
+      <label class="switch-row"><input type="checkbox" id="se-cancel" ${s.cancelled ? 'checked' : ''}><span class="sw-track"></span><span><b>Cancelled</b><span class="muted small">Keeps it on the calendar, faded and struck through</span></span></label>
+      ${later.length ? `<div class="field"><span class="form-label">Apply to</span>
+        <label class="check"><input type="radio" name="se-scope" value="one" checked> Only this class</label>
+        <label class="check"><input type="radio" name="se-scope" value="following"> This and the ${later.length} later ${esc(DAY[D.parse(base.date).getDay()])} ${codeLabel(base.code)} classes at ${fmtTime(base.start)}</label></div>` : ''}
+      <div class="muted small">Your changes sit on top of the official timetable and sync to your other devices. Notes, ticks and carpool stay with the class.</div>
+    </form>
+    <footer>
+      ${s.edited ? '<button class="btn left" id="se-reset">Reset to timetable</button>' : ''}
+      <button class="btn" id="se-back">Cancel</button>
+      <button class="btn primary" id="se-save">Save</button>
+    </footer>`, { color: courseColor(s.code) });
+  $('#se-mode').value = s.mode || 'in-person';
+  $('#se-kind').value = s.kind === 'exam' || s.kind === 'test' ? s.kind : 'class';
+  $('#se-back').onclick = () => openSession(id);
+  if (s.edited) $('#se-reset').onclick = () => { setMeta(id, { ov: null, ovAt: Date.now() }); commit(); closeModal(); toast('Back to the timetable version'); };
+  $('#se-save').onclick = () => {
+    const start = $('#se-start').value, end = $('#se-end').value;
+    if (start && end && end <= start) return toast('End time must be after the start');
+    const kind = $('#se-kind').value;
+    const patch = { title: $('#se-title').value.trim() || base.title, date: $('#se-date').value || s.date, start, end,
+      mode: $('#se-mode').value, detail: $('#se-detail').value.trim(), kind: kind === 'class' ? base.kind : kind, cancelled: $('#se-cancel').checked };
+    setSessionOv(id, patch);
+    if ($('input[name=se-scope]:checked')?.value === 'following') {
+      // Later classes get the same changes; a date change shifts each of them by the same number of days.
+      const shift = D.diffDays(base.date, patch.date);
+      for (const x of later) setSessionOv(x.id, { ...patch, date: D.iso(D.add(D.parse(x.date), shift)) });
+    }
+    commit();
+    closeModal();
+    toast('Class updated');
+  };
+}
 function openSession(id) {
   const s = byId.get(id);
   if (!s) return;
@@ -1930,7 +2110,8 @@ function openSession(id) {
     <div class="body">
       <div style="display:flex;gap:6px;flex-wrap:wrap">${modeChip(s.mode)}${kindChip(s)}${groupChip(s)}
         ${s.type ? `<span class="chip mode">${{ lab: 'Lab', clinic: 'Clinic', lecture: 'Lecture', session: 'Session', program: 'Program' }[s.type] || s.type}</span>` : ''}
-        ${rel === 'other' ? '<span class="chip" style="color:var(--warn)">Not your group</span>' : ''}</div>
+        ${rel === 'other' ? '<span class="chip" style="color:var(--warn)">Not your group</span>' : ''}
+        ${s.cancelled ? '<span class="chip" style="color:var(--danger)">Cancelled</span>' : ''}${s.edited ? '<span class="chip">✎ Edited</span>' : ''}</div>
       <dl class="kv-list">
         ${s.detail ? `<dt>Details</dt><dd>${esc(s.detail)}</dd>` : ''}
         ${s.instructors?.length ? `<dt>Instructor${s.instructors.length > 1 ? 's' : ''}</dt><dd>${esc(s.instructors.join(', '))}</dd>` : ''}
@@ -1949,6 +2130,7 @@ function openSession(id) {
     </div>
     <footer>
       <span class="left muted small" id="ses-saved"></span>
+      <button class="btn" id="ses-edit">✎ Edit class</button>
       ${s.periodId ? `<button class="btn" id="ses-period">Edit class periods</button>` : ''}
       ${s.code ? `<button class="btn" id="ses-cnote">${ICON.note} Course notes</button>` : ''}
       <button class="btn" id="ses-add">${ICON.plus} Add assignment / due date</button>
@@ -1959,6 +2141,7 @@ function openSession(id) {
   $$('[data-m]', modal).forEach((cb) => (cb.onchange = () => { setMeta(id, { [cb.dataset.m]: cb.checked }); commit({ rerender: false }); changed = true; }));
   $$('[data-toggle]', modal).forEach((cb) => (cb.onchange = () => { changed = true; toggleItem(cb.dataset.toggle, cb.checked); }));
   $('#ses-add').onclick = () => openItemEditor({ course: s.code || null, date: s.date, type: 'assignment' });
+  $('#ses-edit').onclick = () => openSessionEditor(id);
   if (s.periodId) $('#ses-period').onclick = () => openLevelWizard(s.level, { step: 2 });
   if (s.code) $('#ses-cnote').onclick = () => { closeModal(); ui.noteCourse = s.code; ui.noteActive = null; ui.noteMode = 'notes'; setView('notes'); };
 }
@@ -3163,6 +3346,14 @@ document.addEventListener('click', (e) => {
   if (ddEl) { e.preventDefault(); return toggleDayDone(ddEl.dataset.daydone); }
   const colEl = e.target.closest('[data-collapse]');
   if (colEl) { e.preventDefault(); return setDayCollapsed(colEl.dataset.collapse, !dayIsCollapsed(colEl.dataset.collapse)); }
+  const dw = e.target.closest('[data-donewk]');
+  if (dw) { e.preventDefault(); return toggleDoneWeek(dw.dataset.donewk, dw); }
+  const wk = e.target.closest('[data-wkmode]');
+  if (wk) {
+    ui.weekMode = wk.dataset.wkmode;
+    try { localStorage.setItem('l1s:wkmode', ui.weekMode); } catch {}
+    return render();
+  }
   const tkDone = e.target.closest('[data-tkdone]');
   if (tkDone) {
     e.preventDefault(); e.stopPropagation();
