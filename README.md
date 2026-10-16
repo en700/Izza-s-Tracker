@@ -21,8 +21,10 @@ A password-protected timetable and school-year tracker for the dental hygiene pr
 - **Month, Agenda and Courses views.** The Agenda is searchable and can be filtered by course.
   Each Courses card shows instructors, sessions done, the next class, the next exam, attendance and the
   weighted grade so far.
-- **Edit timetable classes.** Open any class and choose **✎ Edit class** to change its title, date, start/end time, in person /
-  online, room or details, mark it as an exam/test, or mark it cancelled (it stays on the calendar, faded and struck through).
+- **Edit timetable classes.** Open any class and choose **✎ Edit class**: it opens the same editor as a new calendar entry, so you
+  can change the course (class), type, icon, colour, title, date and times, in person / online, room or link, notes, checklist and
+  attachments, make it a task (with status, grade and weight in Deadlines) or an exam/test, turn its class checks off, or mark it
+  cancelled (it stays on the calendar, faded and struck through).
   Changes can apply to just that class or to it and every later class in the same weekly slot. You can also drag a class to
   another time or day, or drag its bottom edge, in the week grid. Edits sit on top of the official timetable, sync to your other
   devices, and **Reset to timetable** undoes them; notes, ticks and carpool stay with the class.
@@ -93,8 +95,8 @@ A password-protected timetable and school-year tracker for the dental hygiene pr
 - **Attended ticks** on every class in the week grid and the phone list, so you can mark attendance without opening the class.
 - **Holiday themes.** The site dresses up by itself for a few days a year, using your device's date. 🎃 *Halloween* (Oct 25 – Nov 1):
   pumpkin-orange and purple colours (a dark version in dark mode), a witch hat on the logo, bats, a cobweb and spider, a jack-o'-lantern
-  "New calendar entry" button, 🎃👻🦇🍬 click bursts and a pumpkin on Oct 31. Turn it off, or preview it any day, in Settings
-  (or add `?skin=halloween` to the address). Printouts never change.
+  "New calendar entry" button, 🎃👻🦇🍬 click bursts and a pumpkin on Oct 31. Turn it off in Settings; add `?skin=halloween` to the
+  address to see it on any day. Printouts never change.
 - **Hearts & stars** ♥★ burst out of some clicks (can be turned off in Settings, and stay off if you've asked your device to reduce motion).
 - **Print** (landscape, made to work in black and white: in person = solid box with a thick bar, online = dashed box,
   exam/test = thick double border + the word EXAM/TEST).   - *Weekly planner* (1 page per week): a large timetable where every class has ☐ Prep ☐ Att ☐ Rev boxes and every event or due

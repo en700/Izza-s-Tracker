@@ -970,6 +970,10 @@ body.dragging-pill, body.dragging-pill * { cursor: grabbing !important; user-sel
 .hol-set { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 @media print { #holiday-deco, .hol-mark { display: none !important; } }
 
+.ses-extra { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 13px; color: var(--muted); }
+.ses-extra a { display: inline-flex; gap: 4px; align-items: center; }
+.ses-extra svg { width: 13px; height: 13px; }
+
 /* ---------- Responsive ---------- */
 @media (max-width: 1000px) {
   .cols-2 { grid-template-columns: 1fr; }

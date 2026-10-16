@@ -406,7 +406,7 @@ function commit({ rerender = true } = {}) {
 
 function getMeta(id) { return data.sessionMeta[id] || {}; }
 // Tick-box shown on class blocks/rows so attendance can be checked without opening the class.
-const tracksAttendance = (e) => (e.src === 's' ? !isClosure(e) && !!e.start : !!e.item?.track);
+const tracksAttendance = (e) => (e.src === 's' ? !isClosure(e) && !!e.start && e.track !== false : !!e.item?.track);
 const attendBox = (e) => {
   if (!tracksAttendance(e)) return '';
   const k = metaKey(e), on = !!getMeta(k).attended;
@@ -559,9 +559,9 @@ const modeLabel = (m) => (m === 'in-person' ? 'In person' : m === 'online' ? 'On
 const modeChip = (m) => (m === 'online' || m === 'in-person' ? `<span class="chip mode ${modeClass(m)}">${m === 'online' ? ICON.online : ICON.inperson}${modeLabel(m)}</span>` : '');
 const kindChip = (e) =>
   e.kind === 'exam' || e.item?.exam ? '<span class="chip exam">EXAM</span>' : e.kind === 'test' ? '<span class="chip test">TEST</span>' : '';
-const entryColor = (e) => (e.src === 'i' && !e.code ? e.item?.color || typeOf(e.item).color || 'var(--PERSONAL)' : courseColor(e.code));
+const entryColor = (e) => (e.src === 's' && e.color ? e.color : e.src === 'i' && !e.code ? e.item?.color || typeOf(e.item).color || 'var(--PERSONAL)' : courseColor(e.code));
 const itemIcon = (it) => it.icon || typeOf(it).icon;
-const entryTitle = (e) => (e.src === 's' && e.code && e.title === SCHED.courses[e.code] ? COURSE_SHORT[e.code] : e.src === 'i' ? `${itemIcon(e.item)} ${e.title}` : e.title);
+const entryTitle = (e) => (e.src === 's' ? `${e.icon ? e.icon + ' ' : ''}${e.code && e.title === SCHED.courses[e.code] ? COURSE_SHORT[e.code] : e.title}` : e.src === 'i' ? `${itemIcon(e.item)} ${e.title}` : e.title);
 function minutesOf(e) {
   return e.start && e.end ? D.mins(e.end) - D.mins(e.start) : 0;
 }
@@ -590,7 +590,7 @@ const ui = {
 const narrowMQ = matchMedia('(max-width: 760px)');
 
 // Holiday skins switch on by themselves for a few days a year (MM-DD, inclusive) and can be turned off
-// in Settings. "?skin=halloween" in the address, or the Preview button in Settings, shows one any day.
+// in Settings. "?skin=halloween" in the address shows one any day ("?skin=" turns that off again).
 const HOLIDAYS = [
   { id: 'halloween', name: 'Halloween', icon: '🎃', from: '10-25', to: '11-01', day: '10-31' },
 ];
@@ -1418,11 +1418,13 @@ function deadlineRows() {
     key: 'i:' + it.id, src: 'i', id: it.id, code: it.course, name: `${itemIcon(it)} ${it.title}`, date: it.date, time: it.start, end: it.end, kind: it.kind, type: it.type,
     status: statusOf(it), grade: it.grade || '', weight: it.weight ?? '', item: it,
   }));
-  if (ui.taskTimetable) {
-    for (const s of SCHED.sessions) {
-      if ((s.kind !== 'exam' && s.kind !== 'test') || relevance(s) === 'other') continue;
+  // Timetable exams (when shown) and any class you switched to a task in its editor.
+  for (const s of SCHED.sessions) {
+    const exam = s.kind === 'exam' || s.kind === 'test';
+    if (relevance(s) === 'other' || s.cancelled || !(s.task || (exam && ui.taskTimetable))) continue;
+    {
       const m = getMeta(s.id);
-      rows.push({ key: 's:' + s.id, src: 's', id: s.id, code: s.code, name: s.code ? `${s.detail || 'Exam'} — ${COURSE_SHORT[s.code]}` : s.title,
+      rows.push({ key: 's:' + s.id, src: 's', id: s.id, code: s.code, name: s.task && !exam ? entryTitle(s) : s.code ? `${s.detail || 'Exam'} — ${COURSE_SHORT[s.code]}` : s.title,
         date: s.date, time: s.start, kind: s.kind, status: m.status || (s.date < D.today() ? 'done' : 'not-started'), grade: m.grade || '', weight: m.weight ?? '', session: s });
     }
   }
@@ -2075,7 +2077,7 @@ const modalHead = (title, sub = '') => `<header><span class="bar"></span><div st
 
 /* ---- Class session details ---- */
 // Save changes to one timetable class; only the fields that differ from the official timetable are kept.
-const OV_FIELDS = ['date', 'start', 'end', 'title', 'detail', 'mode', 'kind', 'cancelled'];
+const OV_FIELDS = ['date', 'start', 'end', 'title', 'detail', 'mode', 'kind', 'cancelled', 'code', 'color', 'icon', 'type', 'task', 'track'];
 function setSessionOv(id, patch) {
   const base = LEVEL_SCHED.sessions.find((x) => x.id === id);
   if (!base) return;
@@ -2083,61 +2085,14 @@ function setSessionOv(id, patch) {
   for (const f of OV_FIELDS) {
     if (!(f in ov)) continue;
     const v = ov[f], b = base[f];
-    if (f === 'cancelled' ? !v : (v ?? '') === (b ?? '')) delete ov[f];
+    const same = f === 'cancelled' || f === 'task' ? !v === !b : f === 'track' ? (v !== false) === (b !== false) : f === 'type' ? !v || v === 'class' : (v ?? '') === (b ?? '');
+    if (same) delete ov[f];
   }
   setMeta(id, { ov: Object.keys(ov).length ? ov : null, ovAt: Date.now() });
 }
-function openSessionEditor(id) {
-  const s = byId.get(id);
-  const base = LEVEL_SCHED.sessions.find((x) => x.id === id);
-  if (!s || !base) return;
-  const later = LEVEL_SCHED.sessions.filter((x) => x.id !== id && x.code === base.code && x.date > base.date && x.start === base.start
-    && D.parse(x.date).getDay() === D.parse(base.date).getDay() && JSON.stringify(x.group || null) === JSON.stringify(base.group || null));
-  openModal(`${modalHead(`Edit class`, `${s.code ? codeLabel(s.code) + ' · ' : ''}Official timetable: ${fmtDate(base.date, { long: true })} · ${fmtRange(base.start, base.end)}`)}
-    <form class="body" id="se-form" autocomplete="off">
-      <label class="field">Title<input type="text" id="se-title" value="${esc(s.title)}"></label>
-      <div class="grid-3">
-        <label class="field">Date<input type="date" id="se-date" value="${s.date}"></label>
-        <label class="field">Start<input type="time" id="se-start" value="${s.start || ''}"></label>
-        <label class="field">End<input type="time" id="se-end" value="${s.end || ''}"></label>
-      </div>
-      <div class="grid-2">
-        <label class="field">Where<select id="se-mode"><option value="in-person">In person</option><option value="online">Online</option><option value="unspecified">Location TBA</option></select></label>
-        <label class="field">Type<select id="se-kind"><option value="class">Class</option><option value="exam">Exam</option><option value="test">Test</option></select></label>
-      </div>
-      <label class="field">Room / details<input type="text" id="se-detail" value="${esc(s.detail || '')}" placeholder="Room, clinic, Zoom link…"></label>
-      <label class="switch-row"><input type="checkbox" id="se-cancel" ${s.cancelled ? 'checked' : ''}><span class="sw-track"></span><span><b>Cancelled</b><span class="muted small">Keeps it on the calendar, faded and struck through</span></span></label>
-      ${later.length ? `<div class="field"><span class="form-label">Apply to</span>
-        <label class="check"><input type="radio" name="se-scope" value="one" checked> Only this class</label>
-        <label class="check"><input type="radio" name="se-scope" value="following"> This and the ${later.length} later ${esc(DAY[D.parse(base.date).getDay()])} ${codeLabel(base.code)} classes at ${fmtTime(base.start)}</label></div>` : ''}
-      <div class="muted small">Your changes sit on top of the official timetable and sync to your other devices. Notes, ticks and carpool stay with the class.</div>
-    </form>
-    <footer>
-      ${s.edited ? '<button class="btn left" id="se-reset">Reset to timetable</button>' : ''}
-      <button class="btn" id="se-back">Cancel</button>
-      <button class="btn primary" id="se-save">Save</button>
-    </footer>`, { color: courseColor(s.code) });
-  $('#se-mode').value = s.mode || 'in-person';
-  $('#se-kind').value = s.kind === 'exam' || s.kind === 'test' ? s.kind : 'class';
-  $('#se-back').onclick = () => openSession(id);
-  if (s.edited) $('#se-reset').onclick = () => { setMeta(id, { ov: null, ovAt: Date.now() }); commit(); closeModal(); toast('Back to the timetable version'); };
-  $('#se-save').onclick = () => {
-    const start = $('#se-start').value, end = $('#se-end').value;
-    if (start && end && end <= start) return toast('End time must be after the start');
-    const kind = $('#se-kind').value;
-    const patch = { title: $('#se-title').value.trim() || base.title, date: $('#se-date').value || s.date, start, end,
-      mode: $('#se-mode').value, detail: $('#se-detail').value.trim(), kind: kind === 'class' ? base.kind : kind, cancelled: $('#se-cancel').checked };
-    setSessionOv(id, patch);
-    if ($('input[name=se-scope]:checked')?.value === 'following') {
-      // Later classes get the same changes; a date change shifts each of them by the same number of days.
-      const shift = D.diffDays(base.date, patch.date);
-      for (const x of later) setSessionOv(x.id, { ...patch, date: D.iso(D.add(D.parse(x.date), shift)) });
-    }
-    commit();
-    closeModal();
-    toast('Class updated');
-  };
-}
+// Timetable classes open in the same editor as new calendar entries; saving writes your changes
+// over the official timetable (see setSessionOv) instead of creating a new entry.
+function openSessionEditor(id) { openItemEditor({}, { sessionId: id }); }
 function openSession(id) {
   const s = byId.get(id);
   if (!s) return;
@@ -2167,6 +2122,8 @@ function openSession(id) {
       </div>
       <label class="field">Class notes
         <textarea id="ses-note" placeholder="Notes for this class — what was covered, homework mentioned, questions…">${esc(m.note || '')}</textarea></label>
+      ${(m.subtasks || []).length || (m.attachments || []).length ? `<div class="ses-extra">${(m.subtasks || []).length ? `<span>☑ ${m.subtasks.filter((x) => x.done).length}/${m.subtasks.length} steps</span>` : ''}
+        ${(m.attachments || []).map((f, i) => `<a href="#" data-sfo="${i}">${ICON.clip}${esc(f.name)}</a>`).join('')}<button type="button" class="link-btn" id="ses-edit2">Open in editor</button></div>` : ''}
       ${related.length ? `<div><div class="section-title" style="margin-top:0">Due this day</div><div class="card">${related.map(taskRowHTML).join('')}</div></div>` : ''}
     </div>
     <footer>
@@ -2183,6 +2140,8 @@ function openSession(id) {
   $$('[data-toggle]', modal).forEach((cb) => (cb.onchange = () => { changed = true; toggleItem(cb.dataset.toggle, cb.checked); }));
   $('#ses-add').onclick = () => openItemEditor({ course: s.code || null, date: s.date, type: 'assignment' });
   $('#ses-edit').onclick = () => openSessionEditor(id);
+  if ($('#ses-edit2')) $('#ses-edit2').onclick = () => openSessionEditor(id);
+  $$('[data-sfo]', modal).forEach((el) => (el.onclick = (e) => { e.preventDefault(); openAttachment(m.attachments[+el.dataset.sfo]); }));
   if (s.periodId) $('#ses-period').onclick = () => openLevelWizard(s.level, { step: 2 });
   if (s.code) $('#ses-cnote').onclick = () => { closeModal(); ui.noteCourse = s.code; ui.noteActive = null; ui.noteMode = 'notes'; setView('notes'); };
 }
@@ -2328,24 +2287,36 @@ function openTypesManager(onDone) {
   });
 }
 
-function openItemEditor(seed = {}, { occ = null } = {}) {
-  const existing = seed.id && data.items.find((i) => i.id === seed.id);
+function openItemEditor(seed = {}, { occ = null, sessionId = null } = {}) {
+  const ses = sessionId && byId.get(sessionId);
+  const sesBase = ses && LEVEL_SCHED.sessions.find((x) => x.id === sessionId);
+  if (ses) {
+    const m = getMeta(sessionId);
+    seed = { type: ses.type && typesList().some((t) => t.id === ses.type) ? ses.type : 'class', task: !!ses.task, exam: ses.kind === 'exam' || ses.kind === 'test', track: ses.track !== false,
+      title: ses.title, course: ses.code || null, date: ses.date, start: ses.start || '', end: ses.end || '', mode: ses.mode === 'unspecified' ? '' : ses.mode || '' };
+    Object.assign(seed, { _ses: { icon: ses.icon || '', color: ses.color || '', location: ses.detail || '', notes: m.note || '', subtasks: structuredClone(m.subtasks || []),
+      attachments: structuredClone(m.attachments || []), status: m.status || 'not-started', grade: m.grade || '', weight: m.weight ?? '' } });
+  }
+  const existing = !ses && seed.id && data.items.find((i) => i.id === seed.id);
   const seedType = typesList().find((t) => t.id === seed.type) || typesList().find((t) => t.id === 'assignment') || typesList()[0];
   const it = existing ? migrateItem(structuredClone(existing)) : migrateItem({
     id: uid('t'), type: seedType.id, task: seed.task ?? !!seedType.task, exam: seed.exam ?? !!seedType.exam, track: seed.track ?? !!seedType.track,
     title: seed.title || '', course: seed.course || null, date: seed.date || D.today(), start: seed.start || '', end: seed.end || '',
     mode: seed.mode || '', priority: 'normal', notes: '', subtasks: [], attachments: [], done: false, createdAt: Date.now(),
-    location: '', color: '', icon: '', recur: null, exdates: [],
+    location: '', color: '', icon: '', recur: null, exdates: [], ...(seed._ses || {}),
   });
   it.subtasks ||= [];
   it.attachments ||= [];
   const recurring = existing && isRecurring(existing);
+  const later = ses ? LEVEL_SCHED.sessions.filter((x) => x.id !== sessionId && x.code === sesBase.code && x.date > sesBase.date && x.start === sesBase.start
+    && D.parse(x.date).getDay() === D.parse(sesBase.date).getDay() && JSON.stringify(x.group || null) === JSON.stringify(sesBase.group || null)) : [];
   if (!recurring) occ = null;
   const shownDate = occ || it.date;
   const r = it.recur || { freq: 'none', interval: 1, byDay: [], until: '' };
   const flag = (id, on, label, hint) => `<label class="switch-row"><input type="checkbox" id="${id}" ${on ? 'checked' : ''}><span class="sw-track"></span><span><b>${label}</b><span class="muted small">${hint}</span></span></label>`;
   const modal = openModal(`
-    ${modalHead(existing ? 'Edit entry' : 'New calendar entry', recurring ? `🔁 ${esc(recurText(existing))}` : 'Everything is optional except the title — set it up however you like.')}
+    ${ses ? modalHead('Edit class', `Official timetable: ${sesBase.code ? codeLabel(sesBase.code) + ' · ' : ''}${fmtDate(sesBase.date, { long: true })}${sesBase.start ? ' · ' + fmtRange(sesBase.start, sesBase.end) : ''}`)
+      : modalHead(existing ? 'Edit entry' : 'New calendar entry', recurring ? `🔁 ${esc(recurText(existing))}` : 'Everything is optional except the title — set it up however you like.')}
     <form class="body ed-body" id="it-form" autocomplete="off">
       <div class="ed-main">
       <div class="field"><span class="form-label">Type</span><div class="qc-cats type-chips" id="it-types"></div></div>
@@ -2358,7 +2329,11 @@ function openItemEditor(seed = {}, { occ = null } = {}) {
           <label class="field" id="it-end-wrap">End<input type="time" id="it-end" value="${esc(it.end || '')}"></label>
         </div>
         <label class="check small"><input type="checkbox" id="it-allday" ${existing && !it.start ? 'checked' : ''}> All day</label>
-        <div class="repeat-box" id="it-repeat-wrap">
+        ${ses ? `<label class="switch-row"><input type="checkbox" id="it-cancelled" ${ses.cancelled ? 'checked' : ''}><span class="sw-track"></span><span><b>Cancelled</b><span class="muted small">Stays on the calendar, faded and struck through</span></span></label>
+        ${later.length ? `<div class="field"><span class="form-label">Apply to</span>
+          <label class="check"><input type="radio" name="it-scope" value="one" checked> Only this class</label>
+          <label class="check"><input type="radio" name="it-scope" value="following"> This and the ${later.length} later ${esc(DAY[D.parse(sesBase.date).getDay()])} ${codeLabel(sesBase.code)} classes at ${fmtTime(sesBase.start)} <span class="muted small">(notes, checklist and files stay with this class)</span></label></div>` : ''}` : ''}
+        <div class="repeat-box ${ses ? 'hidden' : ''}" id="it-repeat-wrap">
           <label class="field">Repeat<select id="it-freq">
             <option value="none">Does not repeat</option><option value="daily">Daily</option><option value="weekdays">Every weekday (Mon–Fri)</option>
             <option value="weekly">Weekly</option><option value="monthly">Monthly (same date)</option></select></label>
@@ -2399,6 +2374,7 @@ function openItemEditor(seed = {}, { occ = null } = {}) {
       </div>
     </form>
     <footer>
+      ${ses && ses.edited ? '<button class="btn left" id="it-reset">Reset to timetable</button>' : ''}
       ${existing ? `<button class="btn danger left" id="it-del">${ICON.trash} Delete</button><button class="btn" id="it-dup">Duplicate</button>` : ''}
       <button class="btn" data-close>Cancel</button>
       <button class="btn primary" id="it-save">Save</button>
@@ -2418,8 +2394,8 @@ function openItemEditor(seed = {}, { occ = null } = {}) {
     $$('[data-etype]', modal).forEach((b) => (b.onclick = () => {
       typeId = b.dataset.etype;
       const t = curType();
-      // A new entry takes the type's starting behaviour; an existing one keeps its own settings.
-      if (!existing) {
+      // A new entry takes the type's starting behaviour; an existing one (or a class) keeps its own settings.
+      if (!existing && !ses) {
         $('#it-task').checked = !!t.task; $('#it-exam').checked = !!t.exam; $('#it-track').checked = !!t.track;
         if (!t.range) $('#it-end').value = '';
       }
@@ -2535,9 +2511,28 @@ function openItemEditor(seed = {}, { occ = null } = {}) {
     ed.weight = $('#it-weight').value.trim();
     return ed;
   };
+  const saveSession = (ed) => {
+    // Changing the course renames a class that still had the old course's name.
+    if (ed.course !== ses.code && ed.title === SCHED.courses[ses.code] && SCHED.courses[ed.course]) ed.title = SCHED.courses[ed.course];
+    const baseKind = sesBase.kind === 'exam' || sesBase.kind === 'test' ? 'class' : sesBase.kind;
+    const patch = { title: ed.title, date: ed.date || ses.date, start: ed.start, end: ed.end, mode: ed.mode || 'unspecified', detail: ed.location, code: ed.course || '',
+      color: ed.color, icon: ed.icon, type: ed.type, task: ed.task, track: ed.track, cancelled: $('#it-cancelled').checked,
+      kind: ed.exam ? (sesBase.kind === 'test' ? 'test' : 'exam') : baseKind };
+    if (patch.mode === sesBase.mode || (!sesBase.mode && patch.mode === 'unspecified')) patch.mode = sesBase.mode;
+    setSessionOv(sessionId, patch);
+    setMeta(sessionId, { note: ed.notes, subtasks: ed.subtasks, attachments: ed.attachments, status: ed.status || statusOf(ed), grade: ed.grade, weight: ed.weight });
+    if ($('input[name=it-scope]:checked')?.value === 'following') {
+      const shift = D.diffDays(sesBase.date, patch.date);
+      for (const x of later) setSessionOv(x.id, { ...patch, date: D.iso(D.add(D.parse(x.date), shift)) });
+    }
+    closeModal();
+    commit();
+    toast('Class updated');
+  };
   const save = async () => {
     const ed = collect();
     if (!ed) return;
+    if (ses) return saveSession(ed);
     if (recurring && occ) {
       const scope = await chooseScope('Edit repeating entry');
       if (!scope) return;
@@ -2550,6 +2545,7 @@ function openItemEditor(seed = {}, { occ = null } = {}) {
     toast(existing ? 'Saved' : `${itemIcon(ed)} ${typeOf(ed).name} added`);
   };
   $('#it-save').onclick = save;
+  if (ses?.edited) $('#it-reset').onclick = () => { setMeta(sessionId, { ov: null, ovAt: Date.now() }); closeModal(); commit(); toast('Back to the timetable version'); };
   $('#it-form').onsubmit = (e) => { e.preventDefault(); save(); };
   if (existing) {
     $('#it-del').onclick = async () => {
@@ -2608,8 +2604,7 @@ function openSettings() {
       <div class="type-preview">${typesList().map((t) => `<span class="qc-cat" style="--c:${esc(t.color)}">${t.icon} ${esc(t.name)}</span>`).join('')}<button type="button" class="btn sm" id="st-types">✎ Manage types</button></div>
       <label class="check small"><input type="checkbox" id="st-fun" ${st.fun !== false ? 'checked' : ''}> Hearts & stars burst out of some clicks ♥★</label>
       <div class="hol-set"><label class="check small"><input type="checkbox" id="st-hol" ${st.holidays !== false ? 'checked' : ''}> Holiday themes — the site dresses up by itself for a few days:
-        ${HOLIDAYS.map((h) => `${h.icon} ${h.name} (${fmtDate('2026-' + h.from).replace(/^\w+, /, '')} – ${fmtDate('2026-' + h.to).replace(/^\w+, /, '')})`).join(', ')}</label>
-        ${HOLIDAYS.map((h) => `<button type="button" class="btn sm" data-hol-preview="${h.id}">${holidayPreview() === h.id ? 'Stop preview' : `Preview ${h.icon}`}</button>`).join('')}</div>
+        ${HOLIDAYS.map((h) => `${h.icon} ${h.name} (${fmtDate('2026-' + h.from).replace(/^\w+, /, '')} – ${fmtDate('2026-' + h.to).replace(/^\w+, /, '')})`).join(', ')}</label></div>
       <div class="section-title" style="margin:6px 0 0">Levels</div>
       <div class="card level-list">${[...Array(MAX_LEVEL)].map((_, i) => {
         const n = i + 1, ok = levelAvailable(n), L = n === 1 ? BASE_L1.term : data.levels[n];
@@ -2648,11 +2643,6 @@ function openSettings() {
   ['#st-cp-oncolor', '#st-cp-offcolor', '#st-cp-ontext', '#st-cp-offtext'].forEach((sel) => ($(sel).onchange = saveCarpool));
   $('#st-types').onclick = () => openTypesManager(() => openSettings());
   $('#st-hol').onchange = (e) => { data.settings.holidays = e.target.checked; data.settingsUpdatedAt = Date.now(); commit(); };
-  $$('[data-hol-preview]').forEach((b) => (b.onclick = () => {
-    try { sessionStorage.setItem('l1s:skin', holidayPreview() === b.dataset.holPreview ? '' : b.dataset.holPreview); } catch {}
-    const u = new URL(location.href); u.searchParams.delete('skin'); history.replaceState(null, '', u);
-    closeModal(); render(); openSettings();
-  }));
   $('#st-fun').onchange = (e) => { data.settings.fun = e.target.checked; data.settingsUpdatedAt = Date.now(); commit({ rerender: false }); if (e.target.checked) burst(innerWidth / 2, innerHeight / 2); };
   $$('[data-edit-level]', modal).forEach((b) => (b.onclick = () => openLevelWizard(+b.dataset.editLevel)));
   $$('[data-level]', modal).forEach((b) => b.addEventListener('click', () => closeModal()));
