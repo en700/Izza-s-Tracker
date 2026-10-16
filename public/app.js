@@ -589,10 +589,51 @@ const ui = {
 };
 const narrowMQ = matchMedia('(max-width: 760px)');
 
+// Holiday skins switch on by themselves for a few days a year (MM-DD, inclusive) and can be turned off
+// in Settings. "?skin=halloween" in the address, or the Preview button in Settings, shows one any day.
+const HOLIDAYS = [
+  { id: 'halloween', name: 'Halloween', icon: '🎃', from: '10-25', to: '11-01', day: '10-31' },
+];
+function holidayPreview() {
+  try {
+    const q = new URLSearchParams(location.search).get('skin');
+    if (q !== null) sessionStorage.setItem('l1s:skin', q);
+    return sessionStorage.getItem('l1s:skin') || '';
+  } catch { return ''; }
+}
+function activeHoliday() {
+  const forced = holidayPreview();
+  if (forced) return HOLIDAYS.find((h) => h.id === forced) || null;
+  if (data.settings.holidays === false) return null;
+  const now = new Date(), md = `${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  return HOLIDAYS.find((h) => md >= h.from && md <= h.to) || null;
+}
+// A little icon on the holiday itself in the week and month views.
+const holidayMark = (iso) => { const h = activeHoliday(); return h && iso.slice(5) === h.day ? `<span class="hol-mark" title="${h.name}">${h.icon}</span>` : ''; };
+const BAT = '<svg viewBox="0 0 64 28" aria-hidden="true"><path d="M32 9c-1.6-3-3.2-4-4.4-4 .3 1.4.1 2.6-.6 3.4-3.6-4.4-9.6-7-16-6.4 3 1.6 4.8 3.8 5.2 6.2-4.6-1.4-10.2-.8-16.2 2.6 5.2.6 9 2.6 11.2 5.8 2.8-1.8 6.2-2 9 .2 1.4-2.6 4-3.8 6.4-3.4.6 2.6 2.6 4.6 5.4 5.4 2.8-.8 4.8-2.8 5.4-5.4 2.4-.4 5 .8 6.4 3.4 2.8-2.2 6.2-2 9-.2 2.2-3.2 6-5.2 11.2-5.8-6-3.4-11.6-4-16.2-2.6.4-2.4 2.2-4.6 5.2-6.2-6.4-.6-12.4 2-16 6.4-.7-.8-.9-2-.6-3.4-1.2 0-2.8 1-4.4 4z"/></svg>';
+const WEB = '<svg viewBox="0 0 100 100" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1"><path d="M100 0L0 100M100 0L30 100M100 0L0 30M100 0L60 100M100 0L0 60"/><path d="M84 0q2 12 16 16M66 0q4 26 34 34M46 0q6 42 54 54M26 0q8 58 74 74M6 0q10 76 94 94"/></svg>';
+const PUMPKIN = '<svg class="smiley pumpkin" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5.2c-.4-1.6.2-3 1.6-3.6l.6 1.1c-.9.4-1.2 1.3-1 2.5z" fill="#2f9e44"/><ellipse cx="7.6" cy="13.4" rx="5" ry="7.6" fill="#e8590c"/><ellipse cx="16.4" cy="13.4" rx="5" ry="7.6" fill="#e8590c"/><ellipse cx="12" cy="13.4" rx="5.4" ry="8" fill="#fd7e14"/><path d="M7.6 6.2c-1.6 2-2.4 4.4-2.4 7.2s.8 5.2 2.4 7.2M16.4 6.2c1.6 2 2.4 4.4 2.4 7.2s-.8 5.2-2.4 7.2" fill="none" stroke="#c2410c" stroke-width=".6" opacity=".7"/><path d="M7.4 11.6l1.8-2.8 1.8 2.8zM13 11.6l1.8-2.8 1.8 2.8z" fill="#ffd43b"/><path d="M7 14.4c1.2 2.6 3 3.6 5 3.6s3.8-1 5-3.6l-1.4.8-.8-1-1 1.4-1-1.4-.8 1.4-1-1.4-.8 1-1.2-1.4-.6 1.2z" fill="#ffd43b"/></svg>';
+const smiley = () => (activeHoliday()?.id === 'halloween' ? PUMPKIN : SMILEY);
+function applyHoliday() {
+  const h = activeHoliday(), r = document.documentElement;
+  if ((r.dataset.holiday || '') === (h?.id || '')) return;
+  if (h) r.dataset.holiday = h.id; else delete r.dataset.holiday;
+  $('#holiday-deco')?.remove();
+  const fab = $('.fab .smiley');
+  if (fab) { fabSmiley ||= fab.outerHTML; fab.outerHTML = h?.id === 'halloween' ? PUMPKIN.replace('class="smiley pumpkin"', 'class="smiley pumpkin fab-smile"') : fabSmiley; }
+  if (h?.id !== 'halloween') return;
+  const deco = document.createElement('div');
+  deco.id = 'holiday-deco';
+  deco.setAttribute('aria-hidden', 'true');
+  deco.innerHTML = `<div class="web">${WEB}</div><div class="spider"><i></i></div>${[1, 2, 3].map((i) => `<div class="bat b${i}">${BAT}</div>`).join('')}`;
+  document.body.appendChild(deco);
+}
+let fabSmiley = '';
 function applyTheme() {
   const r = document.documentElement;
   if (data.settings.theme === 'auto') delete r.dataset.theme; else r.dataset.theme = data.settings.theme;
   r.dataset.density = data.settings.density;
+  applyHoliday();
 }
 
 function renderHeader() {
@@ -702,8 +743,8 @@ try { legendCollapsed = localStorage.getItem('l1s:legend') === 'collapsed'; } ca
 const SMILEY = '<svg class="smiley" viewBox="0 0 24 24" aria-hidden="true"><defs><clipPath id="smiley-mouth"><path d="M6.6 13h10.8c0 3.4-2.5 5.5-5.4 5.5S6.6 16.4 6.6 13z"/></clipPath></defs><circle cx="12" cy="12" r="10" fill="#ffd43b" stroke="#e8a400" stroke-width="1"/><circle cx="8.6" cy="10" r="1.4" fill="#5c3b00"/><circle cx="15.4" cy="10" r="1.4" fill="#5c3b00"/><circle cx="6.6" cy="13.4" r="1.2" fill="#ff8fab" opacity=".7"/><circle cx="17.4" cy="13.4" r="1.2" fill="#ff8fab" opacity=".7"/><path class="smile" d="M7.6 14c1 2 2.6 3 4.4 3s3.4-1 4.4-3" fill="none" stroke="#5c3b00" stroke-width="1.7" stroke-linecap="round"/><g class="grin"><path d="M6.6 13h10.8c0 3.4-2.5 5.5-5.4 5.5S6.6 16.4 6.6 13z" fill="#5c3b00"/><g clip-path="url(#smiley-mouth)"><ellipse cx="12" cy="18" rx="3.2" ry="1.6" fill="#ff8fab"/><rect x="6.4" y="12.8" width="11.2" height="2.7" rx=".6" fill="#fff"/><path d="M9.3 13v2.5M12 13v2.5M14.7 13v2.5" stroke="#d9cfc0" stroke-width=".45"/><rect class="gleam" x="5" y="11.5" width="1.3" height="5.5" fill="#fff" opacity=".95" transform="skewX(-20)"/></g><g class="glints" fill="#fff" stroke="#f2c200" stroke-width=".25"><path class="glint g1" d="M17.9 10.3Q17.9 12.0 19.599999999999998 12.0Q17.9 12.0 17.9 13.7Q17.9 12.0 16.2 12.0Q17.9 12.0 17.9 10.3Z"/><path class="glint g2" d="M5.9 15.299999999999999Q5.9 16.4 7.0 16.4Q5.9 16.4 5.9 17.5Q5.9 16.4 4.800000000000001 16.4Q5.9 16.4 5.9 15.299999999999999Z"/><path class="glint g3" d="M13.4 10.5Q13.4 11.3 14.200000000000001 11.3Q13.4 11.3 13.4 12.100000000000001Q13.4 11.3 12.6 11.3Q13.4 11.3 13.4 10.5Z"/></g></g></svg>';
 // The main "add" button lives at the top of the sidebar, above the legend.
 const newEntryBtn = (compact) => compact
-  ? `<button class="new-entry compact" data-action="new-item" title="New calendar entry (N)" aria-label="New calendar entry" aria-keyshortcuts="N">${SMILEY}<span class="ne-plus">+</span></button>`
-  : `<button class="new-entry" data-action="new-item" title="Add an event, due date, exam or reminder (N)" aria-keyshortcuts="N">${SMILEY}<span>New calendar entry</span><kbd>N</kbd></button>`;
+  ? `<button class="new-entry compact" data-action="new-item" title="New calendar entry (N)" aria-label="New calendar entry" aria-keyshortcuts="N">${smiley()}<span class="ne-plus">+</span></button>`
+  : `<button class="new-entry" data-action="new-item" title="Add an event, due date, exam or reminder (N)" aria-keyshortcuts="N">${smiley()}<span>New calendar entry</span><kbd>N</kbd></button>`;
 const withLegend = (main) => `<div class="with-legend ${legendCollapsed ? 'collapsed' : ''}"><div class="wl-main">${main}</div>${legendCollapsed ? `
   <div class="side-col">${newEntryBtn(true)}<button class="legend-strip card" data-legend="open" title="Show legend & course filter" aria-label="Show legend and course filter" aria-expanded="false">
     <span class="ls-arrow">‹</span><span class="ls-label">Legend & courses</span>
@@ -834,7 +875,7 @@ function renderWeek(v) {
   const head = days.map((iso, i) => {
     const d = D.parse(iso), tag = dayTag(iso);
     return `<div class="dh ${iso === today ? 'today' : ''}">
-      <div class="dn">${DAY3[i]}</div><div class="dd">${d.getDate()}</div>
+      <div class="dn">${DAY3[i]}</div><div class="dd">${d.getDate()}${holidayMark(iso)}</div>
       <div class="daytag">${tag ? `<span class="chip ${tag.cls}">${tag.label}</span>` : '&nbsp;'}</div></div>`;
   }).join('');
 
@@ -1195,7 +1236,7 @@ function renderMonthMobile(v) {
     const list = entriesOn(iso).filter((e) => !isClosure(e));
     const dots = list.slice(0, 4).map((e) => `<i class="${e.src === 'i' && e.done ? 'off' : ''} ${modeClass(e.mode)}" style="--c:${entryColor(e)}"></i>`).join('');
     cells += `<button type="button" class="mm-d ${inMonth(iso) ? '' : 'out'} ${iso === today ? 'today' : ''} ${iso === ui.monthSel ? 'sel' : ''} ${dayClosed(iso) ? 'closed' : ''}" data-msel="${iso}" aria-label="${esc(fmtDate(iso, { long: true }))}, ${list.length} item${list.length === 1 ? '' : 's'}">
-      <span class="n">${d.getDate()}</span><span class="dots">${dots}${list.length > 4 ? '<b>+</b>' : ''}</span></button>`;
+      <span class="n">${d.getDate()}${holidayMark(iso)}</span><span class="dots">${dots}${list.length > 4 ? '<b>+</b>' : ''}</span></button>`;
   }
   const sel = ui.monthSel;
   const list = entriesOn(sel).sort((a, b) => (a.start || '00:00').localeCompare(b.start || '00:00'));
@@ -1232,7 +1273,7 @@ function renderMonth(v) {
         <span class="tm">${fmtTime(e.start, false)}</span> <b>${e.code ? codeLabel(e.code).replace('DH ', '') : '•'}</b> <span class="tx">${esc(e.kind === 'exam' ? 'EXAM ' : e.kind === 'test' ? 'TEST ' : '')}${esc(entryTitle(e))}</span></div>`;
     }).join('');
     cells += `<div class="md ${d.getMonth() !== first.getMonth() ? 'out' : ''} ${iso === today ? 'today' : ''} ${closed ? 'closed' : ''}" data-goto="${iso}" title="Open week">
-      <div class="top"><span class="num">${d.getDate()}</span><button type="button" class="md-add" data-add-date="${iso}" title="Add an event on ${esc(fmtDate(iso))}" aria-label="Add event">+</button>${tag ? `<span class="daytag"><span class="chip ${tag.cls}">${tag.label}</span></span>` : ''}</div>
+      <div class="top"><span class="num">${d.getDate()}</span>${holidayMark(iso)}<button type="button" class="md-add" data-add-date="${iso}" title="Add an event on ${esc(fmtDate(iso))}" aria-label="Add event">+</button>${tag ? `<span class="daytag"><span class="chip ${tag.cls}">${tag.label}</span></span>` : ''}</div>
       ${closed ? `<div class="mini muted"><span class="tx"><i>${esc(closed.title)}</i></span></div>` : ''}${minis}
       ${shown.length > max ? `<div class="mini more">+${shown.length - max} more</div>` : ''}
     </div>`;
@@ -2566,6 +2607,9 @@ function openSettings() {
       <div class="section-title" style="margin:6px 0 0">Entry types</div>
       <div class="type-preview">${typesList().map((t) => `<span class="qc-cat" style="--c:${esc(t.color)}">${t.icon} ${esc(t.name)}</span>`).join('')}<button type="button" class="btn sm" id="st-types">✎ Manage types</button></div>
       <label class="check small"><input type="checkbox" id="st-fun" ${st.fun !== false ? 'checked' : ''}> Hearts & stars burst out of some clicks ♥★</label>
+      <div class="hol-set"><label class="check small"><input type="checkbox" id="st-hol" ${st.holidays !== false ? 'checked' : ''}> Holiday themes — the site dresses up by itself for a few days:
+        ${HOLIDAYS.map((h) => `${h.icon} ${h.name} (${fmtDate('2026-' + h.from).replace(/^\w+, /, '')} – ${fmtDate('2026-' + h.to).replace(/^\w+, /, '')})`).join(', ')}</label>
+        ${HOLIDAYS.map((h) => `<button type="button" class="btn sm" data-hol-preview="${h.id}">${holidayPreview() === h.id ? 'Stop preview' : `Preview ${h.icon}`}</button>`).join('')}</div>
       <div class="section-title" style="margin:6px 0 0">Levels</div>
       <div class="card level-list">${[...Array(MAX_LEVEL)].map((_, i) => {
         const n = i + 1, ok = levelAvailable(n), L = n === 1 ? BASE_L1.term : data.levels[n];
@@ -2603,6 +2647,12 @@ function openSettings() {
   };
   ['#st-cp-oncolor', '#st-cp-offcolor', '#st-cp-ontext', '#st-cp-offtext'].forEach((sel) => ($(sel).onchange = saveCarpool));
   $('#st-types').onclick = () => openTypesManager(() => openSettings());
+  $('#st-hol').onchange = (e) => { data.settings.holidays = e.target.checked; data.settingsUpdatedAt = Date.now(); commit(); };
+  $$('[data-hol-preview]').forEach((b) => (b.onclick = () => {
+    try { sessionStorage.setItem('l1s:skin', holidayPreview() === b.dataset.holPreview ? '' : b.dataset.holPreview); } catch {}
+    const u = new URL(location.href); u.searchParams.delete('skin'); history.replaceState(null, '', u);
+    closeModal(); render(); openSettings();
+  }));
   $('#st-fun').onchange = (e) => { data.settings.fun = e.target.checked; data.settingsUpdatedAt = Date.now(); commit({ rerender: false }); if (e.target.checked) burst(innerWidth / 2, innerHeight / 2); };
   $$('[data-edit-level]', modal).forEach((b) => (b.onclick = () => openLevelWizard(+b.dataset.editLevel)));
   $$('[data-level]', modal).forEach((b) => b.addEventListener('click', () => closeModal()));
@@ -3303,7 +3353,9 @@ function openLevelWizard(n, { step = 0 } = {}) {
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 function burst(x, y, { count = 9, spread = 70, size = 18 } = {}) {
   if (reducedMotion.matches) return;
-  const glyphs = [['♥', '#ff4d8d'], ['♥', '#ff8fb8'], ['❤', '#f03e3e'], ['★', '#fcc419'], ['✦', '#ffd43b'], ['★', '#ffa94d']];
+  const glyphs = activeHoliday()?.id === 'halloween'
+    ? [['🎃', ''], ['👻', ''], ['🦇', ''], ['🍬', ''], ['★', '#ff922b'], ['✦', '#9775fa']]
+    : [['♥', '#ff4d8d'], ['♥', '#ff8fb8'], ['❤', '#f03e3e'], ['★', '#fcc419'], ['✦', '#ffd43b'], ['★', '#ffa94d']];
   for (let i = 0; i < count; i++) {
     const [ch, color] = glyphs[Math.floor(Math.random() * glyphs.length)];
     const el = document.createElement('span');

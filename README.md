@@ -91,6 +91,10 @@ A password-protected timetable and school-year tracker for the dental hygiene pr
   Dialogs open as bottom sheets with the Save button always in reach (drag the handle down to dismiss), and the Month view becomes
   a tap-friendly calendar with coloured dots that lists the chosen day underneath.
 - **Attended ticks** on every class in the week grid and the phone list, so you can mark attendance without opening the class.
+- **Holiday themes.** The site dresses up by itself for a few days a year, using your device's date. 🎃 *Halloween* (Oct 25 – Nov 1):
+  pumpkin-orange and purple colours (a dark version in dark mode), a witch hat on the logo, bats, a cobweb and spider, a jack-o'-lantern
+  "New calendar entry" button, 🎃👻🦇🍬 click bursts and a pumpkin on Oct 31. Turn it off, or preview it any day, in Settings
+  (or add `?skin=halloween` to the address). Printouts never change.
 - **Hearts & stars** ♥★ burst out of some clicks (can be turned off in Settings, and stay off if you've asked your device to reduce motion).
 - **Print** (landscape, made to work in black and white: in person = solid box with a thick bar, online = dashed box,
   exam/test = thick double border + the word EXAM/TEST).   - *Weekly planner* (1 page per week): a large timetable where every class has ☐ Prep ☐ Att ☐ Rev boxes and every event or due
