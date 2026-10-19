@@ -543,6 +543,21 @@ function entriesOn(iso, opts) {
 }
 const isTimed = (e) => !!(e.start && e.end && (e.src === 's' || e.item));
 const isClosure = (e) => e.kind === 'closure';
+// Exam days (pink) outrank test days (yellow) in the month and week headers. A timetable session says
+// exam/test itself; your own exam-flagged entries count as exams when the title says exam/final/midterm.
+function dayAssessment(iso) {
+  let level = '';
+  for (const e of entriesOn(iso, { all: false })) {
+    if (e.cancelled) continue;
+    const isExamFlag = e.src === 's' ? e.kind === 'exam' || e.kind === 'test' : !!e.item?.exam;
+    if (!isExamFlag) continue;
+    const exam = e.src === 's' ? e.kind === 'exam' : /\b(exam|final|midterm)\b/i.test(e.title);
+    if (exam) return 'exam';
+    level = 'test';
+  }
+  return level;
+}
+const assessBadge = (lvl) => (lvl ? `<span class="xm-star ${lvl}" title="${lvl === 'exam' ? 'Exam day' : 'Test day'}">★</span>` : '');
 function dayClosed(iso) { return (byDate.get(iso) || []).find(isClosure); }
 function dayTag(iso) {
   const ses = sessionsOn(iso, { all: false }).filter((s) => !isClosure(s));
@@ -717,6 +732,7 @@ function legendHTML() {
         ${data.settings.others !== 'hide' ? '<tr><td><span class="key other"></span></td><td>Other group</td></tr>' : ''}
         <tr><td><span class="chip mine">${rad}</span></td><td>Your group</td></tr>
         <tr><td><span class="chip exam">EXAM</span></td><td>Exam / test</td></tr>
+        <tr><td><span class="key-day has-test">★</span><span class="key-day has-exam">★</span></td><td>Test day · exam day (month view)</td></tr>
         <tr><td class="ico">${ICON.note}</td><td>Has class notes</td></tr>
         <tr><td><span class="cp-chip on" style="--cp:${esc(carpoolCfg().onColor)}"><span class="cp-car">🚗</span><span class="cp-mark">✓</span></span><span class="cp-chip" style="--cp:${esc(carpoolCfg().offColor)}"><span class="cp-car">🚗</span><span class="cp-mark">✕</span></span></td><td>${esc(carpoolCfg().onText)} / ${esc(carpoolCfg().offText)} (in-person classes — tap to flip)</td></tr>
         <tr><td class="ico" style="color:var(--ok);font-weight:800">✓</td><td>Attended</td></tr>
@@ -874,8 +890,9 @@ function renderWeek(v) {
 
   const head = days.map((iso, i) => {
     const d = D.parse(iso), tag = dayTag(iso);
-    return `<div class="dh ${iso === today ? 'today' : ''}">
-      <div class="dn">${DAY3[i]}</div><div class="dd">${d.getDate()}${holidayMark(iso)}</div>
+    const xm = dayAssessment(iso);
+    return `<div class="dh ${iso === today ? 'today' : ''} ${xm ? 'has-' + xm : ''}" ${xm ? `title="${xm === 'exam' ? 'Exam day' : 'Test day'}"` : ''}>
+      <div class="dn">${DAY3[i]}</div><div class="dd">${d.getDate()}${assessBadge(xm)}${holidayMark(iso)}</div>
       <div class="daytag">${tag ? `<span class="chip ${tag.cls}">${tag.label}</span>` : '&nbsp;'}</div></div>`;
   }).join('');
 
@@ -1235,8 +1252,9 @@ function renderMonthMobile(v) {
     const d = D.add(gridStart, i), iso = D.iso(d);
     const list = entriesOn(iso).filter((e) => !isClosure(e));
     const dots = list.slice(0, 4).map((e) => `<i class="${e.src === 'i' && e.done ? 'off' : ''} ${modeClass(e.mode)}" style="--c:${entryColor(e)}"></i>`).join('');
-    cells += `<button type="button" class="mm-d ${inMonth(iso) ? '' : 'out'} ${iso === today ? 'today' : ''} ${iso === ui.monthSel ? 'sel' : ''} ${dayClosed(iso) ? 'closed' : ''}" data-msel="${iso}" aria-label="${esc(fmtDate(iso, { long: true }))}, ${list.length} item${list.length === 1 ? '' : 's'}">
-      <span class="n">${d.getDate()}${holidayMark(iso)}</span><span class="dots">${dots}${list.length > 4 ? '<b>+</b>' : ''}</span></button>`;
+    const xm = dayAssessment(iso);
+    cells += `<button type="button" class="mm-d ${inMonth(iso) ? '' : 'out'} ${iso === today ? 'today' : ''} ${iso === ui.monthSel ? 'sel' : ''} ${dayClosed(iso) ? 'closed' : ''} ${xm ? 'has-' + xm : ''}" data-msel="${iso}" aria-label="${esc(fmtDate(iso, { long: true }))}${xm ? `, ${xm} day` : ''}, ${list.length} item${list.length === 1 ? '' : 's'}">
+      <span class="n">${d.getDate()}${holidayMark(iso)}</span>${xm ? '<span class="xm-dot">★</span>' : ''}<span class="dots">${dots}${list.length > 4 ? '<b>+</b>' : ''}</span></button>`;
   }
   const sel = ui.monthSel;
   const list = entriesOn(sel).sort((a, b) => (a.start || '00:00').localeCompare(b.start || '00:00'));
@@ -1272,8 +1290,9 @@ function renderMonth(v) {
       return `<div class="mini ${modeClass(e.mode)} ${e.kind === 'exam' || e.kind === 'test' ? e.kind : ''}" style="--c:${entryColor(e)};${e.rel === 'other' ? 'opacity:.5' : ''}">
         <span class="tm">${fmtTime(e.start, false)}</span> <b>${e.code ? codeLabel(e.code).replace('DH ', '') : '•'}</b> <span class="tx">${esc(e.kind === 'exam' ? 'EXAM ' : e.kind === 'test' ? 'TEST ' : '')}${esc(entryTitle(e))}</span></div>`;
     }).join('');
-    cells += `<div class="md ${d.getMonth() !== first.getMonth() ? 'out' : ''} ${iso === today ? 'today' : ''} ${closed ? 'closed' : ''}" data-goto="${iso}" title="Open week">
-      <div class="top"><span class="num">${d.getDate()}</span>${holidayMark(iso)}<button type="button" class="md-add" data-add-date="${iso}" title="Add an event on ${esc(fmtDate(iso))}" aria-label="Add event">+</button>${tag ? `<span class="daytag"><span class="chip ${tag.cls}">${tag.label}</span></span>` : ''}</div>
+    const xm = dayAssessment(iso);
+    cells += `<div class="md ${d.getMonth() !== first.getMonth() ? 'out' : ''} ${iso === today ? 'today' : ''} ${closed ? 'closed' : ''} ${xm ? 'has-' + xm : ''}" data-goto="${iso}" title="${xm === 'exam' ? 'Exam day — ' : xm === 'test' ? 'Test day — ' : ''}Open week">
+      <div class="top"><span class="num">${d.getDate()}</span>${assessBadge(xm)}${holidayMark(iso)}<button type="button" class="md-add" data-add-date="${iso}" title="Add an event on ${esc(fmtDate(iso))}" aria-label="Add event">+</button>${tag ? `<span class="daytag"><span class="chip ${tag.cls}">${tag.label}</span></span>` : ''}</div>
       ${closed ? `<div class="mini muted"><span class="tx"><i>${esc(closed.title)}</i></span></div>` : ''}${minis}
       ${shown.length > max ? `<div class="mini more">+${shown.length - max} more</div>` : ''}
     </div>`;

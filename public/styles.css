@@ -974,6 +974,35 @@ body.dragging-pill, body.dragging-pill * { cursor: grabbing !important; user-sel
 .ses-extra a { display: inline-flex; gap: 4px; align-items: center; }
 .ses-extra svg { width: 13px; height: 13px; }
 
+/* Names in short blocks: the title never shrinks; the time line gives way first */
+.ev .t1, .ev .t2 { flex-shrink: 0; }
+.ev .t3 { flex-shrink: 1; min-height: 0; overflow: hidden; }
+.ev .t1 .chip { height: 14px; padding: 0 5px; font-size: 8.5px; }
+.ev .t1 { min-width: 0; }
+
+/* Test (yellow) and exam (pink) days */
+:root { --test-bg: #fff6cc; --test-line: #f2c200; --exam-bg: #ffe3ef; --exam-line: #e64980; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --test-bg: rgba(250, 204, 21, .14); --test-line: #fcc419; --exam-bg: rgba(240, 101, 149, .16); --exam-line: #f783ac; } }
+:root[data-theme="dark"] { --test-bg: rgba(250, 204, 21, .14); --test-line: #fcc419; --exam-bg: rgba(240, 101, 149, .16); --exam-line: #f783ac; }
+.month .md.has-test { background: var(--test-bg); box-shadow: inset 0 0 0 2px var(--test-line); }
+.month .md.has-exam { background: var(--exam-bg); box-shadow: inset 0 0 0 2px var(--exam-line); }
+.month .md.has-test:hover, .month .md.has-exam:hover { filter: brightness(.98); }
+.xm-star { font-size: 12px; line-height: 1; margin-left: 3px; display: inline-block; }
+.xm-star.test { color: #e0a800; }
+.xm-star.exam { color: var(--exam-line); }
+.month .md .top .xm-star { margin-right: auto; }
+.wk-head .dh.has-test { background: var(--test-bg); box-shadow: inset 0 -3px 0 var(--test-line); }
+.wk-head .dh.has-exam { background: var(--exam-bg); box-shadow: inset 0 -3px 0 var(--exam-line); }
+.mm-d { position: relative; }
+.mm-d.has-test .n { background: var(--test-bg); box-shadow: inset 0 0 0 2px var(--test-line); }
+.mm-d.has-exam .n { background: var(--exam-bg); box-shadow: inset 0 0 0 2px var(--exam-line); }
+.mm-d.sel.has-test .n, .mm-d.sel.has-exam .n { background: var(--accent); }
+.xm-dot { position: absolute; top: 2px; right: 4px; font-size: 10px; line-height: 1; color: #e0a800; }
+.mm-d.has-exam .xm-dot { color: var(--exam-line); }
+.key-day { display: inline-grid; place-items: center; width: 18px; height: 16px; border-radius: 4px; font-size: 10px; margin-right: 3px; }
+.key-day.has-test { background: var(--test-bg); box-shadow: inset 0 0 0 1.5px var(--test-line); color: #e0a800; }
+.key-day.has-exam { background: var(--exam-bg); box-shadow: inset 0 0 0 1.5px var(--exam-line); color: var(--exam-line); }
+
 /* ---------- Responsive ---------- */
 @media (max-width: 1000px) {
   .cols-2 { grid-template-columns: 1fr; }

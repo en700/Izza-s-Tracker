@@ -18,6 +18,9 @@ A password-protected timetable and school-year tracker for the dental hygiene pr
   a key table, then a *Current courses* table with columns Show, Code, Name and Instructor.
   Untick a course to hide its classes and deadlines from the timetable and from printouts. *Hide all*
   and *Show all* switch every course at once. The choice is synced to every device.
+- **Test and exam days stand out.** In the Month view, days with a test get a light-yellow box and a ★, and days with an exam a pink
+  one (on phones the date circle is ringed in yellow or pink). The Week view's day headers are tinted the same way. Timetable tests and
+  exams count, and so do your own entries marked Exam / test (pink if the title says exam, final or midterm, yellow otherwise).
 - **Month, Agenda and Courses views.** The Agenda is searchable and can be filtered by course.
   Each Courses card shows instructors, sessions done, the next class, the next exam, attendance and the
   weighted grade so far.
