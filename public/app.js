@@ -478,13 +478,13 @@ function itemToEntry(it, iso = it.date) {
   return {
     src: 'i', id: it.id, occ: iso, date: iso, start: it.start || null, end: it.end || null, allDay: !it.start,
     code: it.course || null, title: it.title, mode: it.mode || (it.start && it.end ? 'unspecified' : 'none'),
-    kind: it.kind, done: itemDoneOn(it, iso), item: it, rel: 'all', recurring: isRecurring(it),
+    kind: it.kind, done: itemDoneOn(it, iso), missed: !isRecurring(it) && statusOf(it) === 'missed', item: it, rel: 'all', recurring: isRecurring(it),
   };
 }
 // Per-occurrence key for checks on repeating entries (done, attended, carpool…).
 const metaKey = (e) => (e.src === 's' ? e.id : `${e.id}@${e.occ || e.date}`);
 function itemDoneOn(it, iso = it.date) {
-  return isRecurring(it) ? !!getMeta(`${it.id}@${iso}`).done : statusOf(it) === 'done';
+  return isRecurring(it) ? !!getMeta(`${it.id}@${iso}`).done : isDoneLike(statusOf(it));
 }
 // Quick-complete box shown wherever a task appears.
 const doneBox = (e) => (e.src === 'i' && e.item.task
@@ -499,7 +499,7 @@ function toggleEntryDone(key) {
     setMeta(`${id}@${occ}`, { done: on });
     commit();
     if (on) toast('Nice — marked done ✓');
-  } else toggleItem(id, statusOf(it) !== 'done');
+  } else toggleItem(id, !isDoneLike(statusOf(it)));
 }
 // data-open key: sessions by id; items by id plus the occurrence date (repeating events).
 const openKey = (e) => (e.src === 'i' ? `i:${e.id}|${e.occ || e.date}` : `s:${e.id}`);
@@ -680,7 +680,7 @@ function renderHeader() {
     html = `Week <b>${wk}</b> of ${totalWeeks} · ${Math.round(pct)}% through the term<div class="bar"><i style="width:${pct}%"></i></div>`;
   }
   $('#term-progress').innerHTML = html;
-  const open = data.items.filter((i) => i.task && statusOf(i) !== 'done').length;
+  const open = data.items.filter((i) => i.task && !isClosed(statusOf(i))).length;
   $('#task-count').textContent = open ? String(open) : '';
   $$('#tabs button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.view === ui.view)));
   document.body.classList.toggle('has-sidebar', ui.view === 'week' || ui.view === 'month');
@@ -808,7 +808,7 @@ function layoutColumns(evs) {
 function evBlockHTML(e, top, height) {
   const meta = e.src === 's' ? getMeta(e.id) : {};
   const note = ((e.src === 's' ? meta.note : e.item?.notes) || '').trim();
-  const cls = ['ev', modeClass(e.mode), e.rel === 'other' ? 'other' : '', e.kind === 'exam' || e.kind === 'test' ? e.kind : '', e.src === 'i' && e.done ? 'is-done' : '',
+  const cls = ['ev', modeClass(e.mode), e.rel === 'other' ? 'other' : '', e.kind === 'exam' || e.kind === 'test' ? e.kind : '', e.src === 'i' && e.done ? 'is-done' : '', e.src === 'i' && e.missed ? 'is-done missed' : '',
     e.src === 'i' ? 'personal' : '', meta.attended ? 'attended' : '', e.cancelled ? 'cancelled' : '', e.edited ? 'edited' : ''].join(' ');
   const w = 100 / (e._lanes || 1), l = (e._lane || 0) * w;
   const mid = height >= 34;
@@ -843,7 +843,7 @@ function pillHTML(e) {
   const it = e.item;
   const kindLbl = it.exam ? 'Exam' : it.task ? 'Due' : '';
   const box = it.task ? `<span class="box" role="checkbox" tabindex="0" aria-checked="${e.done}" aria-label="Mark done" data-done="${esc(e.id)}|${esc(e.occ || e.date)}"></span>` : `<span class="pill-ico">${itemIcon(it)}</span>`;
-  return `<button class="pill ${e.done ? 'done' : ''} ${it.kind}" data-open="${esc(openKey(e))}" style="--c:${entryColor(e)}" title="${esc(it.title)}">
+  return `<button class="pill ${e.done ? 'done' : ''} ${e.missed ? 'missed' : ''} ${it.kind}" data-open="${esc(openKey(e))}" style="--c:${entryColor(e)}" title="${esc(it.title)}">
     ${box}<span class="tx">${kindLbl ? `<b>${kindLbl}:</b> ` : ''}${it.start ? itemTime(it) + ' ' : ''}${esc(it.title)}</span></button>`;
 }
 
@@ -1212,7 +1212,7 @@ function rowEvHTML(e) {
     const it = e.item;
     return `<div class="row-ev none ${it.task ? 'has-att' : ''}" data-open="${esc(openKey(e))}" style="--c:${entryColor(e)}">
       <div class="tm">${it.start ? itemTime(it) : it.task ? 'Due' : 'All day'}</div>
-      <div><div class="ti" style="${e.done ? 'text-decoration:line-through;color:var(--muted)' : ''}">${itemIcon(it)} ${esc(it.title)}</div>
+      <div><div class="ti" style="${e.done || e.missed ? 'text-decoration:line-through;color:var(--muted)' : ''}">${itemIcon(it)} ${esc(it.title)}</div>
       <div class="meta">${it.course ? `<span class="chip crs" style="--c:${entryColor(e)}">${codeLabel(it.course)}</span>` : ''}<span>${esc(typeOf(it).name)}</span>${kindChip(e)}</div></div>${doneBox(e)}</div>`;
   }
   const meta = e.src === 's' ? getMeta(e.id) : {};
@@ -1416,12 +1416,15 @@ function taskRowHTML(it) {
     <div class="due ${dueClass(it)}">${it.date ? relDay(it.date) : 'No date'}${it.start ? `<br>${itemTime(it)}` : ''}</div>
   </div>`;
 }
-const STATUS = { 'not-started': 'Not started', 'in-progress': 'In progress', done: 'Done' };
+const STATUS = { 'not-started': 'Not started', 'in-progress': 'In progress', done: 'Done', late: 'Late', missed: 'Missed' };
+// Late = handed in after the deadline (counts as finished); Missed = never handed in. Both leave To do / Overdue.
+const isClosed = (st) => st === 'done' || st === 'late' || st === 'missed';
+const isDoneLike = (st) => st === 'done' || st === 'late';
 const statusOf = (it) => it.status || (it.done ? 'done' : 'not-started');
 function setStatus(it, st) {
   it.status = st;
-  if (st === 'done' && !it.done) it.doneAt = Date.now();
-  it.done = st === 'done';
+  if (isDoneLike(st) && !it.done) it.doneAt = Date.now();
+  it.done = isDoneLike(st);
 }
 // "85", "85%", "17/20", "A-"-style text is kept as typed; numbers become a percentage.
 function gradePct(g) {
@@ -1461,18 +1464,28 @@ function updateRow(key, patch) {
 }
 
 // Phones: grouped cards with a big tick, a one-line summary and filters in a bottom sheet.
-const STATUS_SHORT = { 'not-started': 'To do', 'in-progress': 'Doing', done: 'Done' };
-const STATUS_NEXT = { 'not-started': 'in-progress', 'in-progress': 'done', done: 'not-started' };
+const STATUS_SHORT = { 'not-started': 'To do', 'in-progress': 'Doing', done: 'Done', late: 'Late', missed: 'Missed' };
+const STATUS_TOAST = { done: 'Nice — marked done ✓', late: 'Marked late — handed in after the deadline', missed: 'Marked missed' };
+// Tapping a card's status pill offers all five statuses at once.
+function pickStatus(key, cur, el) {
+  const card = el.closest('.tk');
+  const title = card?.querySelector('.tk-title')?.textContent.trim() || 'Status';
+  openModal(`${modalHead('Status', esc(title))}
+    <div class="body st-pick">${Object.entries(STATUS).map(([k, n]) => `<button type="button" class="st-opt st-${k} ${k === cur ? 'on' : ''}" data-pick="${k}">
+      <span class="tk-st st-${k}">${STATUS_SHORT[k]}</span><span>${n}</span><span class="muted small">${STATUS_HINT[k]}</span></button>`).join('')}</div>`);
+  $$('[data-pick]').forEach((b) => (b.onclick = () => { closeModal({ instant: true }); if (b.dataset.pick !== cur) setRowStatus(key, b.dataset.pick, card && document.contains(card) ? el : null); }));
+}
+const STATUS_HINT = { 'not-started': 'Not begun yet', 'in-progress': 'Working on it', done: 'Handed in on time', late: 'Handed in after the deadline', missed: 'Not handed in' };
 function setRowStatus(key, st, el) {
   const card = el?.closest('.tk');
   const finish = () => {
     updateRow(key, { status: st });
     commit();
-    if (st === 'done') toast('Nice — marked done ✓');
+    if (STATUS_TOAST[st]) toast(STATUS_TOAST[st]);
   };
   // Let the card tick and slide away before the list re-sorts.
   // Only slide it away when it is about to leave the current list (To do → done, Done → not done).
-  const leaving = (ui.taskFilter === 'open' && st === 'done') || (ui.taskFilter === 'done' && st !== 'done');
+  const leaving = (ui.taskFilter === 'open' && isClosed(st)) || (ui.taskFilter === 'done' && !isClosed(st));
   if (card && leaving && !reducedMotionMQ.matches) { card.classList.add('ticking'); setTimeout(finish, 260); } else finish();
 }
 function openTaskFilters(v) {
@@ -1503,6 +1516,11 @@ function toggleDoneWeek(wk, el) {
   $$(`[data-donewk-body="${wk}"]`).forEach((x) => x.classList.toggle('open', on));
   $$(`tr[data-donewk-row="${wk}"]`).forEach((x) => (x.hidden = !on));
 }
+// "4 done · 1 late · 1 missed" for a week's folded finished rows.
+function closedLabel(rows) {
+  const n = (st) => rows.filter((r) => r.status === st).length;
+  return [`${n('done')} done`, n('late') && `${n('late')} late`, n('missed') && `${n('missed')} missed`].filter(Boolean).join(' · ');
+}
 const weekOf = (iso) => D.iso(D.sow(D.parse(iso)));
 function weekRange(wk) {
   const a = D.parse(wk), b = D.add(a, 6);
@@ -1517,7 +1535,7 @@ function renderTasksMobile(v, { all, rows, open, overdue, weekDue, doneCount, pc
   const nextEnd = D.iso(D.add(D.parse(weekEnd), 7));
   const group = (r) => {
     if (!r.date) return ['nodate', 'No date'];
-    if (r.date < today) return r.status === 'done' ? ['past', 'Earlier'] : ['overdue', 'Overdue'];
+    if (r.date < today) return isClosed(r.status) ? ['past', 'Earlier'] : ['overdue', 'Overdue'];
     if (r.date === today) return ['today', 'Today'];
     if (r.date === tomorrow) return ['tomorrow', 'Tomorrow'];
     if (r.date > today && r.date <= weekEnd) return ['week', 'Later this week'];
@@ -1535,12 +1553,12 @@ function renderTasksMobile(v, { all, rows, open, overdue, weekDue, doneCount, pc
   // Overdue first, undated last.
   const order = [...groups.keys()].sort((a, b) => (a === 'overdue' ? -1 : b === 'overdue' ? 1 : a === 'nodate' ? 1 : b === 'nodate' ? -1 : 0));
   const card = (r) => {
-    const it = r.item, done = r.status === 'done';
+    const it = r.item, done = isClosed(r.status), missed = r.status === 'missed';
     const over = !done && r.date && r.date < today;
     const subs = it?.subtasks || [];
     const when = r.date ? `${fmtDate(r.date)}${r.time ? ' · ' + fmtTime(r.time) : ''}` : 'No date';
-    return `<div class="tk ${done ? 'is-done' : ''} ${over ? 'over' : ''}" data-open="${r.key}" style="--c:${r.code ? courseColor(r.code) : 'var(--PERSONAL)'}">
-      <button type="button" class="tk-check" data-tkdone="${r.key}" role="checkbox" aria-checked="${done}" aria-label="${done ? 'Mark not done' : 'Mark done'}"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10.5l3.2 3.2L15 6.8"/></svg></button>
+    return `<div class="tk ${done ? 'is-done' : ''} ${missed ? 'is-missed' : ''} ${over ? 'over' : ''}" data-open="${r.key}" style="--c:${r.code ? courseColor(r.code) : 'var(--PERSONAL)'}">
+      <button type="button" class="tk-check ${missed ? 'missed' : ''}" data-tkdone="${r.key}" role="checkbox" aria-checked="${done}" aria-label="${missed ? 'Missed — tap to reopen' : done ? 'Mark not done' : 'Mark done'}"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="${missed ? 'M6.5 6.5l7 7M13.5 6.5l-7 7' : 'M5 10.5l3.2 3.2L15 6.8'}"/></svg></button>
       <div class="tk-main">
         <div class="tk-title">${esc(r.name)}${r.kind === 'exam' || r.kind === 'test' ? ' ' + kindChip({ kind: r.kind === 'test' ? 'test' : 'exam' }) : ''}</div>
         <div class="tk-meta">${r.code ? `<span class="chip crs" style="--c:${courseColor(r.code)}">${codeLabel(r.code)}</span>` : ''}
@@ -1549,20 +1567,20 @@ function renderTasksMobile(v, { all, rows, open, overdue, weekDue, doneCount, pc
           ${r.weight !== '' && r.weight != null ? `<span class="tk-badge">${esc(r.weight)}%</span>` : ''}${r.grade ? `<span class="tk-badge grade">${esc(r.grade)}</span>` : ''}
           ${r.src === 's' ? '<span>timetable</span>' : ''}</div>
       </div>
-      <button type="button" class="tk-st st-${r.status}" data-tkstatus="${r.key}|${r.status}" aria-label="Status: ${STATUS[r.status]} — tap to change">${STATUS_SHORT[r.status]}</button>
+      <button type="button" class="tk-st st-${r.status}" data-tkstatus="${r.key}|${r.status}" aria-label="Status: ${STATUS[r.status]} — tap to change" aria-haspopup="dialog">${STATUS_SHORT[r.status]}</button>
     </div>`;
   };
   const section = (label, list, cls = '', extra = '') => `<section class="tk-group ${cls}"><h3 class="tk-gh"><span>${label}</span>${extra}<span class="tk-n">${list.length}</span></h3>${list.map(card).join('')}</section>`;
   const doneStrip = (wk, done) => !done.length ? '' : `<button type="button" class="tk-donebar" data-donewk="${wk}" aria-expanded="${doneWeekOpen(wk)}">
-      <span class="tk-dck">✓</span><span>${done.length} done</span><span class="tk-wr">${weekRange(wk)}</span><svg class="chev" viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5l6 5-6 5"/></svg></button>
+      <span class="tk-dck">✓</span><span>${closedLabel(done)}</span><span class="tk-wr">${weekRange(wk)}</span><svg class="chev" viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5l6 5-6 5"/></svg></button>
     <div class="tk-donebody ${doneWeekOpen(wk) ? 'open' : ''}" data-donewk-body="${wk}"><div class="tk-doneinner">${done.map(card).join('')}</div></div>`;
   function listHTML() {
     if (ui.taskFilter === 'open') return order.map((k) => section(groups.get(k).label, groups.get(k).rows, k === 'overdue' ? 'is-over' : '')).join('');
     // All / Done: one section per week; that week's finished tasks fold into a "✓ N done" row.
-    const over = rows.filter((r) => r.status !== 'done' && r.date && r.date < today);
+    const over = rows.filter((r) => !isClosed(r.status) && r.date && r.date < today);
     const weeks = new Map();
     for (const r of rows) {
-      if (!r.date || (r.status !== 'done' && r.date < today)) continue;
+      if (!r.date || (!isClosed(r.status) && r.date < today)) continue;
       const wk = weekOf(r.date);
       if (!weeks.has(wk)) weeks.set(wk, []);
       weeks.get(wk).push(r);
@@ -1570,7 +1588,7 @@ function renderTasksMobile(v, { all, rows, open, overdue, weekDue, doneCount, pc
     const keys = [...weeks.keys()].sort();
     if (ui.taskFilter === 'done') keys.reverse();
     return (over.length ? section('Overdue', over, 'is-over') : '') + keys.map((wk) => {
-      const list = weeks.get(wk), openL = list.filter((r) => r.status !== 'done'), doneL = list.filter((r) => r.status === 'done');
+      const list = weeks.get(wk), openL = list.filter((r) => !isClosed(r.status)), doneL = list.filter((r) => isClosed(r.status));
       const name = weekName(wk);
       return `<section class="tk-group"><h3 class="tk-gh"><span>${name}</span>${name.startsWith('Week of') ? '' : `<span class="tk-wr">${weekRange(wk)}</span>`}<span class="tk-n">${openL.length || '✓'}</span></h3>
         ${openL.map(card).join('')}${doneStrip(wk, doneL)}</section>`;
@@ -1619,12 +1637,12 @@ function renderTasks(v) {
   const all = deadlineRows().filter((r) => (!ui.taskCourse || r.code === ui.taskCourse) && (!ui.taskKind || r.type === ui.taskKind || (ui.taskKind === 'exam' && r.kind === 'test')))
     .filter((r) => !q || `${r.name} ${r.code || ''} ${r.item?.notes || ''}`.toLowerCase().includes(q));
   let rows = all;
-  if (ui.taskFilter === 'open') rows = rows.filter((r) => r.status !== 'done');
-  if (ui.taskFilter === 'done') rows = rows.filter((r) => r.status === 'done');
-  const open = all.filter((r) => r.status !== 'done');
+  if (ui.taskFilter === 'open') rows = rows.filter((r) => !isClosed(r.status));
+  if (ui.taskFilter === 'done') rows = rows.filter((r) => isClosed(r.status));
+  const open = all.filter((r) => !isClosed(r.status));
   const overdue = open.filter((r) => r.date && r.date < today).length;
   const weekDue = open.filter((r) => r.date >= today && r.date <= weekEnd).length;
-  const doneCount = all.length - open.length;
+  const doneCount = all.filter((r) => isDoneLike(r.status)).length;
   const pct = all.length ? Math.round((doneCount / all.length) * 100) : 0;
   if (narrowMQ.matches) return renderTasksMobile(v, { all, rows, open, overdue, weekDue, doneCount, pct, today, weekEnd });
 
@@ -1635,11 +1653,11 @@ function renderTasks(v) {
       todayMarked = true;
       divider = `<tr class="today-row"><td colspan="6"><span>Today · ${fmtDate(today)}</span></td></tr>`;
     }
-    const over = r.status !== 'done' && r.date && r.date < today;
+    const over = !isClosed(r.status) && r.date && r.date < today;
     const c = r.code ? courseColor(r.code) : 'var(--PERSONAL)';
     const it = r.item;
     const subs = it?.subtasks || [];
-    return `${divider}<tr class="${r.status === 'done' ? 'is-done' : ''} ${r.src === 's' ? 'from-tt' : ''}" ${attrs}>
+    return `${divider}<tr class="${isDoneLike(r.status) ? 'is-done' : r.status === 'missed' ? 'is-missed' : ''} ${r.src === 's' ? 'from-tt' : ''}" ${attrs}>
       <td class="cls">${r.code ? `<span class="chip crs" style="--c:${c}">${codeLabel(r.code)}</span><span class="cls-name">${esc(COURSE_SHORT[r.code] || '')}</span>` : '<span class="muted">—</span>'}</td>
       <td><div class="nm">${r.src === 'i' && it.task ? doneBox(itemToEntry(it, it.date)) : ''}<button class="link" data-open="${r.key}">${esc(r.name)}</button>
         ${r.kind === 'exam' || r.kind === 'test' ? kindChip({ kind: r.kind === 'test' ? 'test' : 'exam' }) : ''}
@@ -1663,11 +1681,11 @@ function renderTasks(v) {
     buckets.at(-1).rows.push(r);
   }
   const body = buckets.map(({ wk, rows: rs }) => {
-    const doneR = rs.filter((r) => r.status === 'done');
+    const doneR = rs.filter((r) => isClosed(r.status));
     if (ui.taskFilter === 'open' || wk === 'nodate' || !doneR.length) return rs.map((r) => rowHTML(r)).join('');
     const on = doneWeekOpen(wk);
-    return rs.filter((r) => r.status !== 'done').map((r) => rowHTML(r)).join('')
-      + `<tr class="done-sum"><td colspan="6"><button type="button" class="tk-donebar" data-donewk="${wk}" aria-expanded="${on}"><span class="tk-dck">✓</span><span>${doneR.length} finished</span><span class="tk-wr">${weekName(wk)}${weekName(wk).startsWith('Week of') ? '' : ` · ${weekRange(wk)}`}</span><svg class="chev" viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5l6 5-6 5"/></svg></button></td></tr>`
+    return rs.filter((r) => !isClosed(r.status)).map((r) => rowHTML(r)).join('')
+      + `<tr class="done-sum"><td colspan="6"><button type="button" class="tk-donebar" data-donewk="${wk}" aria-expanded="${on}"><span class="tk-dck">✓</span><span>${closedLabel(doneR)}</span><span class="tk-wr">${weekName(wk)}${weekName(wk).startsWith('Week of') ? '' : ` · ${weekRange(wk)}`}</span><svg class="chev" viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5l6 5-6 5"/></svg></button></td></tr>`
       + doneR.map((r) => rowHTML(r, `data-donewk-row="${wk}" ${on ? '' : 'hidden'}`)).join('');
   }).join('');
 
@@ -1713,7 +1731,7 @@ function renderTasks(v) {
     const f = el.dataset.field;
     updateRow(el.dataset.row, { [f]: el.value.trim() });
     commit({ rerender: f === 'status' });
-    if (f === 'status' && el.value === 'done') toast('Nice — marked done ✓');
+    if (f === 'status' && STATUS_TOAST[el.value]) toast(STATUS_TOAST[el.value]);
   }));
   const add = () => {
     const name = $('#qa-name').value.trim();
@@ -1936,7 +1954,7 @@ function renderCourses(v) {
     const online = ses.filter((s) => s.mode === 'online').length, inp = ses.filter((s) => s.mode === 'in-person').length;
     const hrs = ses.reduce((a, s) => a + minutesOf(s), 0) / 60;
     const instr = COURSE_INSTR[code] || [];
-    const open = data.items.filter((i) => i.course === code && statusOf(i) !== 'done').length;
+    const open = data.items.filter((i) => i.course === code && !isClosed(statusOf(i))).length;
     const notes = data.notes.filter((n) => n.course === code).length;
     const pct = past.length ? Math.round((attended / past.length) * 100) : 0;
     const prog = ses.length ? Math.round((past.length / ses.length) * 100) : 0;
@@ -3426,7 +3444,7 @@ document.addEventListener('click', (e) => {
   if (tkSt) {
     e.preventDefault(); e.stopPropagation();
     const [key, st] = [tkSt.dataset.tkstatus.slice(0, tkSt.dataset.tkstatus.lastIndexOf('|')), tkSt.dataset.tkstatus.split('|').pop()];
-    return setRowStatus(key, STATUS_NEXT[st], tkSt);
+    return pickStatus(key, st, tkSt);
   }
   const doneEl = e.target.closest('[data-done]');
   if (doneEl) { e.preventDefault(); e.stopPropagation(); return toggleEntryDone(doneEl.dataset.done); }

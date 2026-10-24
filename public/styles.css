@@ -1003,6 +1003,29 @@ body.dragging-pill, body.dragging-pill * { cursor: grabbing !important; user-sel
 .key-day.has-test { background: var(--test-bg); box-shadow: inset 0 0 0 1.5px var(--test-line); color: #e0a800; }
 .key-day.has-exam { background: var(--exam-bg); box-shadow: inset 0 0 0 1.5px var(--exam-line); color: var(--exam-line); }
 
+/* Late (amber) and Missed (red) */
+select.status.st-late { background: color-mix(in srgb, #fd7e14 22%, var(--card)); color: color-mix(in srgb, #d9480f 85%, var(--text)); }
+select.status.st-missed { background: color-mix(in srgb, var(--danger) 18%, var(--card)); color: var(--danger); }
+.tk-st.st-late { background: color-mix(in srgb, #fd7e14 18%, var(--card)); color: #d9480f; }
+.tk-st.st-missed { background: color-mix(in srgb, var(--danger) 15%, var(--card)); color: var(--danger); }
+.deadlines tr.is-missed td { color: var(--muted); }
+.deadlines tr.is-missed .nm .link { text-decoration: line-through; text-decoration-color: var(--danger); }
+.tk.is-missed { border-left-color: var(--danger); }
+.tk.is-missed .tk-title { text-decoration-color: var(--danger); }
+.tk-check.missed svg { background: var(--danger) !important; border-color: var(--danger) !important; stroke: #fff !important; }
+.pill.missed .tx { text-decoration: line-through; text-decoration-color: var(--danger); color: var(--muted); }
+.pill.missed .box { background: var(--danger); border-color: var(--danger); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tk-st.st-late { color: #ffa94d; } }
+:root[data-theme="dark"] .tk-st.st-late { color: #ffa94d; }
+
+.st-pick { gap: 6px !important; }
+.st-opt { display: grid; grid-template-columns: 72px 1fr; grid-template-rows: auto auto; column-gap: 12px; align-items: center; text-align: left; width: 100%;
+          border: 1px solid var(--line); background: var(--card); border-radius: 12px; padding: 10px 12px; font: inherit; color: var(--text); cursor: pointer; }
+.st-opt .tk-st { grid-row: 1 / 3; text-align: center; pointer-events: none; }
+.st-opt > span:nth-child(2) { font-weight: 600; }
+.st-opt.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.st-opt:hover { background: var(--card-2); }
+
 /* ---------- Responsive ---------- */
 @media (max-width: 1000px) {
   .cols-2 { grid-template-columns: 1fr; }

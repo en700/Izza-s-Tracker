@@ -35,7 +35,7 @@ A password-protected timetable and school-year tracker for the dental hygiene pr
   class notes for that session. The notes then appear inside that class's time block on the timetable
   (and on printouts).
 - **Deadlines (Tasks tab).** Every due date is listed in date order, with columns for Class, Name, Due date,
-  Status (Not started / In progress / Done), Grade and Weight, like the Notion tracker. Timetable exams
+  Status (Not started / In progress / Done / **Late** / **Missed**), Grade and Weight, like the Notion tracker. Timetable exams
   are included, and a line marks today. You can add more from the row at the bottom. The deadlines from the Notion
   "CADH L1 – Deadline Tracker" are preloaded once. So are the Brightspace due dates for the October 2026 intake (DH 102, 103, 107, 108, 110 and Level 1 Orientation),
   with their due times, point values in the notes, and course weights where Brightspace gives them.
@@ -89,6 +89,9 @@ A password-protected timetable and school-year tracker for the dental hygiene pr
 - **Week grid on phones.** The Week tab has a *List / Grid* switch. The grid scrolls sideways; tap an empty slot to add an event, or
   press and hold (about half a second) and drag to set its length, or to move your own events and classes. In the list, each day has
   a **+** button.
+- **Late and Missed.** *Late* means handed in after the deadline: it counts as finished (and toward "% done"). *Missed* means not
+  handed in: it leaves *To do* and *Overdue* without counting as done, and shows struck through in red. On phones, tapping a task's
+  status pill opens a picker with all five statuses.
 - **Finished tasks fold away by week.** In *All* (phone and desktop) each week's finished tasks collapse into one "✓ N done" row you can
   open or close; in *Done* the weeks start open. Your choice is remembered on that device.
 - **Made for phones.** Below 760 px wide the views move to a bottom tab bar, the header shrinks to the logo and a ☰ menu, and
