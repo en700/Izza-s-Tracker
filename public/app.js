@@ -407,10 +407,15 @@ function commit({ rerender = true } = {}) {
 function getMeta(id) { return data.sessionMeta[id] || {}; }
 // Tick-box shown on class blocks/rows so attendance can be checked without opening the class.
 const tracksAttendance = (e) => (e.src === 's' ? !isClosure(e) && !!e.start && e.track !== false : !!e.item?.track);
+// Attendance per class: attended, late or missed (meta.att). meta.attended stays true for attended/late
+// so older data, printouts and stats keep working.
+const ATT = { attended: { label: 'Attended', mark: '✓', hint: 'Was there on time' }, late: { label: 'Late', mark: '◷', hint: 'Arrived late' },
+  missed: { label: 'Missed', mark: '✕', hint: "Didn't attend" } };
+const attOf = (m) => m.att || (m.attended ? 'attended' : '');
 const attendBox = (e) => {
   if (!tracksAttendance(e)) return '';
-  const k = metaKey(e), on = !!getMeta(k).attended;
-  return `<span class="att-box ${on ? 'on' : ''}" role="checkbox" tabindex="0" aria-checked="${on}" data-attend="${esc(k)}" title="${on ? 'Attended — click to undo' : 'Mark attended'}"><span class="att-tick">✓</span><span class="att-lbl">Attended</span></span>`;
+  const k = metaKey(e), st = attOf(getMeta(k)), a = ATT[st];
+  return `<span class="att-box ${st ? 'on ' + st : ''}" role="button" tabindex="0" aria-label="Attendance: ${a ? a.label : 'not marked'}" data-attend="${esc(k)}" title="${a ? `${a.label} — click to change` : 'Mark attended (click again for late / missed)'}"><span class="att-tick">${a ? a.mark : '✓'}</span><span class="att-lbl">${a ? a.label : 'Attended'}</span></span>`;
 };
 // Carpool status on in-person classes: one tap flips between two user-chosen labels/colours.
 const DEFAULT_CARPOOL = { onText: 'Carpool', offText: 'No carpool', onColor: '#2f9e44', offColor: '#adb5bd' };
@@ -431,11 +436,20 @@ function toggleCarpool(id) {
   commit();
   toast(`🚗 ${on ? carpoolCfg().onText : carpoolCfg().offText}`);
 }
-function toggleAttended(id) {
-  const on = !getMeta(id).attended;
-  setMeta(id, { attended: on });
+function setAttendance(id, st) {
+  setMeta(id, { att: st || null, attended: st === 'attended' || st === 'late' });
   commit();
-  if (on) toast('Marked attended ✓');
+  if (st) toast(`${ATT[st].mark} Marked ${ATT[st].label.toLowerCase()}`);
+}
+// First click marks it attended; once marked, a click opens the choices (attended / late / missed / clear).
+function toggleAttended(id) {
+  const cur = attOf(getMeta(id));
+  if (!cur) return setAttendance(id, 'attended');
+  openModal(`${modalHead('Attendance')}
+    <div class="body st-pick">${Object.entries(ATT).map(([k, a]) => `<button type="button" class="st-opt ${k === cur ? 'on' : ''}" data-att-pick="${k}">
+      <span class="att-chip ${k}">${a.mark} ${a.label}</span><span>${a.label}</span><span class="muted small">${a.hint}</span></button>`).join('')}
+      <button type="button" class="st-opt" data-att-pick=""><span class="att-chip">—</span><span>Not marked</span><span class="muted small">Clear attendance</span></button></div>`);
+  $$('[data-att-pick]').forEach((b) => (b.onclick = () => { closeModal({ instant: true }); setAttendance(id, b.dataset.attPick); }));
 }
 function setMeta(id, patch) {
   data.sessionMeta[id] = { ...getMeta(id), ...patch, updatedAt: Date.now() };
@@ -735,7 +749,7 @@ function legendHTML() {
         <tr><td><span class="key-day has-test">★</span><span class="key-day has-exam">★</span></td><td>Test day · exam day (month view)</td></tr>
         <tr><td class="ico">${ICON.note}</td><td>Has class notes</td></tr>
         <tr><td><span class="cp-chip on" style="--cp:${esc(carpoolCfg().onColor)}"><span class="cp-car">🚗</span><span class="cp-mark">✓</span></span><span class="cp-chip" style="--cp:${esc(carpoolCfg().offColor)}"><span class="cp-car">🚗</span><span class="cp-mark">✕</span></span></td><td>${esc(carpoolCfg().onText)} / ${esc(carpoolCfg().offText)} (in-person classes — tap to flip)</td></tr>
-        <tr><td class="ico" style="color:var(--ok);font-weight:800">✓</td><td>Attended</td></tr>
+        <tr><td class="ico" style="font-weight:800"><span style="color:var(--ok)">✓</span> <span style="color:var(--late)">◷</span> <span style="color:var(--danger)">✕</span></td><td>Attended · late · missed (click a marked box to change)</td></tr>
       </tbody>
     </table>
     <div class="lg-head"><h3>Current courses</h3>
@@ -809,7 +823,7 @@ function evBlockHTML(e, top, height) {
   const meta = e.src === 's' ? getMeta(e.id) : {};
   const note = ((e.src === 's' ? meta.note : e.item?.notes) || '').trim();
   const cls = ['ev', modeClass(e.mode), e.rel === 'other' ? 'other' : '', e.kind === 'exam' || e.kind === 'test' ? e.kind : '', e.src === 'i' && e.done ? 'is-done' : '', e.src === 'i' && e.missed ? 'is-done missed' : '',
-    e.src === 'i' ? 'personal' : '', meta.attended ? 'attended' : '', e.cancelled ? 'cancelled' : '', e.edited ? 'edited' : ''].join(' ');
+    e.src === 'i' ? 'personal' : '', attOf(meta) ? 'att-' + attOf(meta) : '', meta.attended ? 'attended' : '', e.cancelled ? 'cancelled' : '', e.edited ? 'edited' : ''].join(' ');
   const w = 100 / (e._lanes || 1), l = (e._lane || 0) * w;
   const mid = height >= 34;
   const code = e.code ? codeLabel(e.code) : e.src === 'i' ? esc(typeOf(e.item).name) : '';
@@ -1947,6 +1961,7 @@ function renderCourses(v) {
     const ses = SCHED.sessions.filter((s) => s.code === code && relevance(s) !== 'other' && !s.cancelled);
     const past = ses.filter((s) => s.date < today || (s.date === today && D.mins(s.end) <= now));
     const attended = past.filter((s) => getMeta(s.id).attended).length;
+    const lateN = past.filter((s) => attOf(getMeta(s.id)) === 'late').length, missedN = past.filter((s) => attOf(getMeta(s.id)) === 'missed').length;
     const upcoming = ses.filter((s) => !past.includes(s));
     const next = upcoming[0];
     const nextExam = upcoming.find((s) => s.kind === 'exam' || s.kind === 'test') ||
@@ -1971,7 +1986,7 @@ function renderCourses(v) {
         <dt>Instructor${instr.length > 1 ? 's' : ''}</dt><dd>${esc(instr.join(', ') || '—')}</dd>
         <dt>Format</dt><dd>${inp ? `${ICON.inperson} ${inp} in person` : ''}${inp && online ? ' · ' : ''}${online ? `${ICON.online} ${online} online` : ''}</dd>
         <dt>Sessions</dt><dd>${past.length} of ${ses.length} done · ${+hrs.toFixed(1)} h total</dd>
-        <dt>Attendance</dt><dd>${past.length ? `${attended}/${past.length} checked (${pct}%)` : '—'}</dd>
+        <dt>Attendance</dt><dd>${past.length ? `${attended}/${past.length} attended (${pct}%)${lateN ? ` · ${lateN} late` : ''}${missedN ? ` · <span style="color:var(--danger)">${missedN} missed</span>` : ''}` : '—'}</dd>
         <dt>Next class</dt><dd>${next ? `${fmtDate(next.date)} · ${fmtRange(next.start, next.end)}` : '—'}</dd>
         <dt>Grade so far</dt><dd>${avg != null ? `<b>${avg.toFixed(1)}%</b> <span class="muted">· ${wSum ? `${+wSum.toFixed(1)}% of course graded` : `${graded.length} graded`}</span>` : '—'}</dd>
         <dt>Next exam</dt><dd>${nextExam ? `<b style="color:var(--danger)">${fmtDate(nextExam.date)}</b> ${esc(nextExam.detail || nextExam.title || '')}` : '—'}</dd>
@@ -2153,7 +2168,7 @@ function openSession(id) {
       </dl>
       <div class="checks">
         <label class="check"><input type="checkbox" data-m="prepared" ${m.prepared ? 'checked' : ''}> Prepared / pre-reading done</label>
-        <label class="check"><input type="checkbox" data-m="attended" ${m.attended ? 'checked' : ''}> Attended</label>
+        <div class="att-seg" role="group" aria-label="Attendance"><span class="muted small">Attendance</span>${Object.entries(ATT).map(([k, a]) => `<button type="button" class="att-chip ${k} ${attOf(m) === k ? 'on' : ''}" data-att-set="${k}" aria-pressed="${attOf(m) === k}">${a.mark} ${a.label}</button>`).join('')}</div>
         <label class="check"><input type="checkbox" data-m="reviewed" ${m.reviewed ? 'checked' : ''}> Notes reviewed</label>
         ${hasCarpool(s) ? `<label class="check"><input type="checkbox" data-m="carpool" ${m.carpool ? 'checked' : ''}> 🚗 ${esc(carpoolCfg().onText)} <span class="muted small">(off: ${esc(carpoolCfg().offText)})</span></label>` : ''}
       </div>
@@ -2173,6 +2188,13 @@ function openSession(id) {
     </footer>`, { color: courseColor(s.code), onClose: () => changed && render() });
   const persist = debounce(() => { commit({ rerender: false }); const el = $('#ses-saved'); if (el) el.textContent = 'Saved'; }, 400);
   $('#ses-note').addEventListener('input', (e) => { setMeta(id, { note: e.target.value }); changed = true; $('#ses-saved').textContent = 'Saving…'; persist(); });
+  $$('[data-att-set]', modal).forEach((b) => (b.onclick = () => {
+    const st = attOf(getMeta(id)) === b.dataset.attSet ? '' : b.dataset.attSet; // tap again to clear
+    setMeta(id, { att: st || null, attended: st === 'attended' || st === 'late' });
+    commit({ rerender: false });
+    changed = true;
+    $$('[data-att-set]', modal).forEach((x) => { x.classList.toggle('on', x.dataset.attSet === st); x.setAttribute('aria-pressed', String(x.dataset.attSet === st)); });
+  }));
   $$('[data-m]', modal).forEach((cb) => (cb.onchange = () => { setMeta(id, { [cb.dataset.m]: cb.checked }); commit({ rerender: false }); changed = true; }));
   $$('[data-toggle]', modal).forEach((cb) => (cb.onchange = () => { changed = true; toggleItem(cb.dataset.toggle, cb.checked); }));
   $('#ses-add').onclick = () => openItemEditor({ course: s.code || null, date: s.date, type: 'assignment' });

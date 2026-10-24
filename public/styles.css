@@ -1026,6 +1026,29 @@ select.status.st-missed { background: color-mix(in srgb, var(--danger) 18%, var(
 .st-opt.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .st-opt:hover { background: var(--card-2); }
 
+/* Attendance: attended (green ✓), late (amber ◷), missed (red ✕) */
+:root { --late: #e8590c; }
+.att-box.late .att-tick { background: var(--late); border-color: var(--late); color: #fff; }
+.att-box.late { color: var(--late); }
+.att-box.missed .att-tick { background: var(--danger); border-color: var(--danger); color: #fff; }
+.att-box.missed { color: var(--danger); }
+.att-box.late:hover .att-tick, .att-box.missed:hover .att-tick { filter: brightness(1.08); }
+.row-ev .att-box.late { border-color: color-mix(in srgb, var(--late) 50%, transparent); }
+.row-ev .att-box.missed { border-color: color-mix(in srgb, var(--danger) 50%, transparent); }
+.ev.att-late { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--late) 55%, transparent); }
+.ev.att-missed { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 55%, transparent); }
+.ev.att-missed .t2 { text-decoration: line-through; text-decoration-color: var(--danger); }
+.att-chip { display: inline-flex; align-items: center; justify-content: center; gap: 4px; border-radius: 14px; padding: 6px 10px; font: inherit; font-size: 12px; font-weight: 700;
+            background: var(--line-2); color: var(--muted); border: 1px solid transparent; white-space: nowrap; }
+.att-chip.attended { background: color-mix(in srgb, var(--ok) 15%, var(--card)); color: var(--ok); }
+.att-chip.late { background: color-mix(in srgb, var(--late) 15%, var(--card)); color: var(--late); }
+.att-chip.missed { background: color-mix(in srgb, var(--danger) 13%, var(--card)); color: var(--danger); }
+.st-opt .att-chip { grid-row: 1 / 3; pointer-events: none; }
+.att-seg { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.att-seg .att-chip { cursor: pointer; opacity: .55; }
+.att-seg .att-chip:hover { opacity: .85; }
+.att-seg .att-chip.on { opacity: 1; border-color: currentColor; }
+
 /* ---------- Responsive ---------- */
 @media (max-width: 1000px) {
   .cols-2 { grid-template-columns: 1fr; }
