@@ -1049,6 +1049,11 @@ select.status.st-missed { background: color-mix(in srgb, var(--danger) 18%, var(
 .att-seg .att-chip:hover { opacity: .85; }
 .att-seg .att-chip.on { opacity: 1; border-color: currentColor; }
 
+.fdf-chip { border: 0; border-radius: 9px; padding: 1px 8px; font: inherit; font-size: 11px; font-weight: 800; letter-spacing: .02em; cursor: pointer;
+            background: #c92a2a; color: #fff; white-space: nowrap; }
+.fdf-chip:hover { filter: brightness(1.1); }
+.fdf-set { border: 1px solid color-mix(in srgb, #c92a2a 35%, var(--line)); border-radius: 12px; padding: 8px 10px !important; }
+
 /* ---------- Responsive ---------- */
 @media (max-width: 1000px) {
   .cols-2 { grid-template-columns: 1fr; }

@@ -107,6 +107,7 @@ const codeLabel = (c) => (c ? esc(c.replace(/^DH(?=\d)/, 'DH ')) : '');
 const L1_SHORT = { ...COURSE_SHORT };
 const CUSTOM_COLORS = {};
 let BASE_L1 = null;
+const BASE_COURSE_NAMES = { DH103: 'Dental Anatomy', DH105: 'Anatomy, Pathology & Pathophysiology', DH106: 'Radiography Theory', DH110: 'Professional Issues I' };
 const courseColor = (c) => (!c ? 'var(--PROGRAM)' : CUSTOM_COLORS[c] || (L1_SHORT[c] ? `var(--${c})` : 'var(--PROGRAM)'));
 const courseOptions = (sel) =>
   `<option value="">— None —</option>` +
@@ -160,10 +161,31 @@ function buildLevelSchedule(n, L, skip = new Set()) {
 }
 
 let levelSig = '', ovSig = '', LEVEL_SCHED = null;
+// "Fuck Doug Ford mode" (Settings): the online timetable issued for Oct 26 – Nov 7, 2026 replaces the official
+// Level 1 timetable for those dates everywhere on the site. [date, start, end, course, instructor]
+const FDF = { from: '2026-10-26', to: '2026-11-07' };
+const FDF_SESSIONS = [
+  ['2026-10-26', '08:00', '10:00', 'DH105', 'Mr. Metersky'], ['2026-10-26', '10:00', '11:30', 'DH106', 'Mr. Metersky'],
+  ['2026-10-27', '08:00', '10:00', 'DH105', 'Mr. Metersky'], ['2026-10-27', '10:00', '11:30', 'DH106', 'Mr. Metersky'], ['2026-10-27', '12:00', '14:00', 'DH110', 'Ms. Steinberg'],
+  ['2026-10-28', '08:00', '10:00', 'DH105', 'Mr. Metersky'], ['2026-10-28', '10:00', '11:30', 'DH106', 'Mr. Metersky'], ['2026-10-28', '12:30', '15:30', 'DH103', 'Ms. Ramesha'],
+  ['2026-10-29', '08:00', '10:00', 'DH105', 'Mr. Metersky'], ['2026-10-29', '10:00', '11:30', 'DH106', 'Mr. Metersky'],
+  ['2026-10-30', '08:00', '10:00', 'DH105', 'Mr. Metersky'], ['2026-10-30', '10:00', '11:30', 'DH106', 'Mr. Metersky'], ['2026-10-30', '12:30', '14:30', 'DH110', 'Ms. Steinberg'],
+  ['2026-11-02', '08:00', '10:00', 'DH105', 'Mr. Metersky'], ['2026-11-02', '10:00', '11:30', 'DH106', 'Mr. Metersky'],
+  ['2026-11-03', '11:30', '13:00', 'DH106', 'Mr. Metersky'], ['2026-11-03', '13:00', '15:00', 'DH105', 'Mr. Metersky'],
+  ['2026-11-04', '08:00', '10:00', 'DH105', 'Mr. Metersky'], ['2026-11-04', '10:00', '11:30', 'DH106', 'Mr. Metersky'], ['2026-11-04', '12:30', '14:30', 'DH110', 'Ms. Steinberg'],
+  ['2026-11-05', '08:00', '11:00', 'DH103', 'Ms. Ramesha'], ['2026-11-05', '11:30', '13:30', 'DH105', 'Mr. Metersky'], ['2026-11-05', '13:30', '15:00', 'DH106', 'Mr. Metersky'],
+  ['2026-11-06', '08:00', '10:00', 'DH105', 'Mr. Metersky'], ['2026-11-06', '10:00', '11:30', 'DH106', 'Mr. Metersky'], ['2026-11-06', '12:30', '14:30', 'DH110', 'Ms. Steinberg'],
+].map(([date, start, end, code, who]) => ({ id: `fdf_${date}_${code}_${start.replace(':', '')}`, src: 's', date, start, end, code, course: BASE_COURSE_NAMES[code], title: BASE_COURSE_NAMES[code],
+  instructors: [who], mode: 'online', type: 'lecture', kind: 'class', fdf: true }));
+const fdfOn = () => !!data.settings.fdf && currentLevel() === 1;
 // Your edits to timetable classes live in sessionMeta[id].ov and are laid over the official timetable.
-const overrideSig = () => Object.entries(data.sessionMeta).filter(([, m]) => m.ovAt).map(([k, m]) => k + m.ovAt).join(',');
+const overrideSig = () => (fdfOn() ? 'fdf;' : '') + Object.entries(data.sessionMeta).filter(([, m]) => m.ovAt).map(([k, m]) => k + m.ovAt).join(',');
 function indexSessions() {
-  const sessions = LEVEL_SCHED.sessions.map((s) => {
+  // In FDF mode the two replaced weeks keep only closures from the official timetable.
+  const base = fdfOn()
+    ? [...LEVEL_SCHED.sessions.filter((s) => s.date < FDF.from || s.date > FDF.to || s.kind === 'closure'), ...FDF_SESSIONS]
+    : LEVEL_SCHED.sessions;
+  const sessions = base.map((s) => {
     const ov = data.sessionMeta[s.id]?.ov;
     return ov && Object.keys(ov).length ? { ...s, ...ov, edited: true, base: s } : s;
   }).sort((a, b) => (a.date + (a.start || '')).localeCompare(b.date + (b.start || '')));
@@ -681,6 +703,9 @@ function renderHeader() {
   $('#levelup-ico').textContent = prog.remaining.length ? '🔒' : '★';
   $('#levelup-count').textContent = prog.remaining.length ? `${prog.total - prog.remaining.length}/${prog.total}` : '';
   btn.title = prog.remaining.length ? `Locked: finish your Level ${level} courses to unlock (${prog.remaining.length} left)` : `Go to Level ${level + 1}!`;
+  document.documentElement.classList.toggle('fdf', fdfOn());
+  $('#fdf-chip')?.remove();
+  if (fdfOn() && D.today() <= FDF.to) $('#levels').insertAdjacentHTML('afterend', `<button type="button" class="fdf-chip" id="fdf-chip" data-action="settings" title="Oct 26 – Nov 7 online timetable is on — tap to change in Settings">✊ FDF mode</button>`);
   $('#term-sub').textContent = `Level ${level} of ${levels} · ${fmtDate(t.start, { year: true }).replace(/^\w+, /, '')} – ${fmtDate(t.end, { year: true }).replace(/^\w+, /, '')}`;
   const start = D.sow(D.parse(t.start)), end = D.parse(t.end);
   const totalWeeks = Math.ceil((D.add(end, 1) - start) / (7 * 864e5));
@@ -2130,8 +2155,9 @@ const modalHead = (title, sub = '') => `<header><span class="bar"></span><div st
 /* ---- Class session details ---- */
 // Save changes to one timetable class; only the fields that differ from the official timetable are kept.
 const OV_FIELDS = ['date', 'start', 'end', 'title', 'detail', 'mode', 'kind', 'cancelled', 'code', 'color', 'icon', 'type', 'task', 'track'];
+const baseSession = (id) => LEVEL_SCHED.sessions.find((x) => x.id === id) || FDF_SESSIONS.find((x) => x.id === id);
 function setSessionOv(id, patch) {
-  const base = LEVEL_SCHED.sessions.find((x) => x.id === id);
+  const base = baseSession(id);
   if (!base) return;
   const ov = { ...(getMeta(id).ov || {}), ...patch };
   for (const f of OV_FIELDS) {
@@ -2348,7 +2374,7 @@ function openTypesManager(onDone) {
 
 function openItemEditor(seed = {}, { occ = null, sessionId = null } = {}) {
   const ses = sessionId && byId.get(sessionId);
-  const sesBase = ses && LEVEL_SCHED.sessions.find((x) => x.id === sessionId);
+  const sesBase = ses && baseSession(sessionId);
   if (ses) {
     const m = getMeta(sessionId);
     seed = { type: ses.type && typesList().some((t) => t.id === ses.type) ? ses.type : 'class', task: !!ses.task, exam: ses.kind === 'exam' || ses.kind === 'test', track: ses.track !== false,
@@ -2367,7 +2393,7 @@ function openItemEditor(seed = {}, { occ = null, sessionId = null } = {}) {
   it.subtasks ||= [];
   it.attachments ||= [];
   const recurring = existing && isRecurring(existing);
-  const later = ses ? LEVEL_SCHED.sessions.filter((x) => x.id !== sessionId && x.code === sesBase.code && x.date > sesBase.date && x.start === sesBase.start
+  const later = ses ? (sesBase.fdf ? FDF_SESSIONS : LEVEL_SCHED.sessions).filter((x) => x.id !== sessionId && x.code === sesBase.code && x.date > sesBase.date && x.start === sesBase.start
     && D.parse(x.date).getDay() === D.parse(sesBase.date).getDay() && JSON.stringify(x.group || null) === JSON.stringify(sesBase.group || null)) : [];
   if (!recurring) occ = null;
   const shownDate = occ || it.date;
@@ -2662,6 +2688,7 @@ function openSettings() {
       <div class="section-title" style="margin:6px 0 0">Entry types</div>
       <div class="type-preview">${typesList().map((t) => `<span class="qc-cat" style="--c:${esc(t.color)}">${t.icon} ${esc(t.name)}</span>`).join('')}<button type="button" class="btn sm" id="st-types">✎ Manage types</button></div>
       <label class="check small"><input type="checkbox" id="st-fun" ${st.fun !== false ? 'checked' : ''}> Hearts & stars burst out of some clicks ♥★</label>
+      <label class="switch-row fdf-set"><input type="checkbox" id="st-fdf" ${st.fdf ? 'checked' : ''}><span class="sw-track"></span><span><b>✊ Fuck Doug Ford mode</b><span class="muted small">Swaps in the online timetable for Oct 26 – Nov 7 (DH 105, 106, 110 and 103 online; no pre-clinic or rad lab). Every view, deadline list and printout follows it. Turn it off to go back to the official timetable — notes and ticks on both versions are kept.</span></span></label>
       <div class="hol-set"><label class="check small"><input type="checkbox" id="st-hol" ${st.holidays !== false ? 'checked' : ''}> Holiday themes — the site dresses up by itself for a few days:
         ${HOLIDAYS.map((h) => `${h.icon} ${h.name} (${fmtDate('2026-' + h.from).replace(/^\w+, /, '')} – ${fmtDate('2026-' + h.to).replace(/^\w+, /, '')})`).join(', ')}</label></div>
       <div class="section-title" style="margin:6px 0 0">Levels</div>
@@ -2701,6 +2728,10 @@ function openSettings() {
   };
   ['#st-cp-oncolor', '#st-cp-offcolor', '#st-cp-ontext', '#st-cp-offtext'].forEach((sel) => ($(sel).onchange = saveCarpool));
   $('#st-types').onclick = () => openTypesManager(() => openSettings());
+  $('#st-fdf').onchange = (e) => {
+    data.settings.fdf = e.target.checked; data.settingsUpdatedAt = Date.now(); commit();
+    toast(e.target.checked ? '✊ Fuck Doug Ford mode on — Oct 26 – Nov 7 online timetable' : 'Back to the official timetable');
+  };
   $('#st-hol').onchange = (e) => { data.settings.holidays = e.target.checked; data.settingsUpdatedAt = Date.now(); commit(); };
   $('#st-fun').onchange = (e) => { data.settings.fun = e.target.checked; data.settingsUpdatedAt = Date.now(); commit({ rerender: false }); if (e.target.checked) burst(innerWidth / 2, innerHeight / 2); };
   $$('[data-edit-level]', modal).forEach((b) => (b.onclick = () => openLevelWizard(+b.dataset.editLevel)));
