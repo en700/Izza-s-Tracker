@@ -1054,6 +1054,55 @@ select.status.st-missed { background: color-mix(in srgb, var(--danger) 18%, var(
 .fdf-chip:hover { filter: brightness(1.1); }
 .fdf-set { border: 1px solid color-mix(in srgb, #c92a2a 35%, var(--line)); border-radius: 12px; padding: 8px 10px !important; }
 
+/* Fall: rust, amber and cranberry on warm parchment, with drifting leaves */
+:root[data-holiday="fall"] {
+  --accent: #b8541a; --accent-ink: #ffffff; --bg: #f8f1e7; --card-2: #fcf7f0; --line: #e9dcc9; --line-2: #f3eadd; --fall2: #a61e4d; --fall3: #e0a800;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-holiday="fall"]:not([data-theme="light"]) {
+    --accent: #f08c3a; --accent-ink: #1c0f04; --bg: #16110c; --card: #211912; --card-2: #1b150f; --line: #3b2e21; --line-2: #2c2219;
+    --text: #f3e9dc; --muted: #c2b19c; --faint: #8a7a66; --fall2: #e64980;
+  }
+}
+:root[data-holiday="fall"][data-theme="dark"] {
+  --accent: #f08c3a; --accent-ink: #1c0f04; --bg: #16110c; --card: #211912; --card-2: #1b150f; --line: #3b2e21; --line-2: #2c2219;
+  --text: #f3e9dc; --muted: #c2b19c; --faint: #8a7a66; --fall2: #e64980;
+}
+[data-holiday="fall"] body { background-image: radial-gradient(1100px 280px at 15% -120px, color-mix(in srgb, #e8590c 13%, transparent), transparent),
+  radial-gradient(900px 260px at 90% -140px, color-mix(in srgb, var(--fall3) 14%, transparent), transparent); background-repeat: no-repeat; }
+[data-holiday="fall"] .logo rect { fill: #b8541a; }
+[data-holiday="fall"] .logo .spark { fill: #ffd43b; }
+[data-holiday="fall"] .brand h1::after { content: " 🍁"; font-size: .85em; }
+[data-holiday="fall"] .tabs button[aria-selected="true"]::after { background: linear-gradient(90deg, var(--accent), var(--fall3)); }
+[data-holiday="fall"] .btn.primary, [data-holiday="fall"] .fab, [data-holiday="fall"] .new-entry:not(.compact) {
+  background: linear-gradient(135deg, #e8590c, #b8541a 55%, #8f3b12); border-color: #8f3b12; }
+#holiday-deco .leaf { position: absolute; top: -40px; font-size: 20px; opacity: .55; animation-name: leaf-fall; animation-timing-function: linear; animation-iteration-count: infinite;
+                      filter: saturate(.9); will-change: transform; }
+#holiday-deco .l1, #holiday-deco .l4 { font-size: 15px; opacity: .45; }
+#holiday-deco .l2, #holiday-deco .l6 { font-size: 24px; opacity: .4; }
+@keyframes leaf-fall {
+  0% { transform: translate(0, 0) rotate(0deg); }
+  25% { transform: translate(40px, 26vh) rotate(90deg); }
+  50% { transform: translate(-30px, 52vh) rotate(200deg); }
+  75% { transform: translate(35px, 78vh) rotate(280deg); }
+  100% { transform: translate(-10px, calc(100vh + 60px)) rotate(380deg); }
+}
+@media (prefers-reduced-motion: reduce) { #holiday-deco .leaf { display: none; } }
+@media (max-width: 760px) { #holiday-deco .l1, #holiday-deco .l3, #holiday-deco .l5 { display: none; } }
+
+/* Quick delete/cancel in popup headers, and the Undo button in toasts */
+.modal header .head-del { color: var(--muted); margin-right: 2px; }
+.modal header .head-del:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+#toast.has-action.show { pointer-events: auto; display: flex; align-items: center; gap: 12px; }
+#toast button { border: 0; background: none; color: var(--accent); font: inherit; font-weight: 700; cursor: pointer; padding: 2px 4px; filter: brightness(1.4); }
+
+/* Notes toolbar */
+.note-tools { display: flex; gap: 4px; margin-bottom: 4px; }
+.note-tools button { border: 1px solid var(--line); background: var(--card); color: var(--muted); border-radius: 8px; padding: 3px 9px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.note-tools button:hover { color: var(--text); border-color: var(--faint); }
+textarea { tab-size: 2; }
+@media (max-width: 760px) { .note-tools button { padding: 6px 12px; font-size: 13px; } }
+
 /* ---------- Responsive ---------- */
 @media (max-width: 1000px) {
   .cols-2 { grid-template-columns: 1fr; }

@@ -57,12 +57,20 @@ function relDay(iso) {
   if (n < 7) return `in ${n} days`;
   return fmtDate(iso);
 }
-function toast(msg) {
+function toast(msg, { action, label = 'Undo' } = {}) {
   const t = $('#toast');
   t.textContent = msg;
+  t.classList.toggle('has-action', !!action);
+  if (action) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    b.onclick = () => { t.classList.remove('show'); action(); };
+    t.appendChild(b);
+  }
   t.classList.add('show');
   clearTimeout(toast.t);
-  toast.t = setTimeout(() => t.classList.remove('show'), 2400);
+  toast.t = setTimeout(() => t.classList.remove('show'), action ? 6000 : 2400);
 }
 function download(name, text, type = 'text/plain') {
   const a = document.createElement('a');
@@ -107,7 +115,8 @@ const codeLabel = (c) => (c ? esc(c.replace(/^DH(?=\d)/, 'DH ')) : '');
 const L1_SHORT = { ...COURSE_SHORT };
 const CUSTOM_COLORS = {};
 let BASE_L1 = null;
-const BASE_COURSE_NAMES = { DH103: 'Dental Anatomy', DH105: 'Anatomy, Pathology & Pathophysiology', DH106: 'Radiography Theory', DH110: 'Professional Issues I' };
+const BASE_COURSE_NAMES = { DH102: 'Practice Environment I', DH103: 'Dental Anatomy', DH104: 'Client Management & Education', DH105: 'Anatomy, Pathology & Pathophysiology',
+  DH106: 'Radiography Theory', DH108: 'Microbiology & Infection Control', DH110: 'Professional Issues I' };
 const courseColor = (c) => (!c ? 'var(--PROGRAM)' : CUSTOM_COLORS[c] || (L1_SHORT[c] ? `var(--${c})` : 'var(--PROGRAM)'));
 const courseOptions = (sel) =>
   `<option value="">— None —</option>` +
@@ -161,9 +170,9 @@ function buildLevelSchedule(n, L, skip = new Set()) {
 }
 
 let levelSig = '', ovSig = '', LEVEL_SCHED = null;
-// "Fuck Doug Ford mode" (Settings): the online timetable issued for Oct 26 – Nov 7, 2026 replaces the official
-// Level 1 timetable for those dates everywhere on the site. [date, start, end, course, instructor]
-const FDF = { from: '2026-10-26', to: '2026-11-07' };
+// "Fuck Doug Ford mode" (Settings): the online timetables issued for Oct 26 – Nov 7 and Nov 9 – 21, 2026 replace
+// the official Level 1 timetable for those dates everywhere on the site. [date, start, end, course, instructor, extra]
+const FDF = { from: '2026-10-26', to: '2026-11-21' };
 const FDF_SESSIONS = [
   ['2026-10-26', '08:00', '10:00', 'DH105', 'Mr. Metersky'], ['2026-10-26', '10:00', '11:30', 'DH106', 'Mr. Metersky'],
   ['2026-10-27', '08:00', '10:00', 'DH105', 'Mr. Metersky'], ['2026-10-27', '10:00', '11:30', 'DH106', 'Mr. Metersky'], ['2026-10-27', '12:00', '14:00', 'DH110', 'Ms. Steinberg'],
@@ -175,8 +184,19 @@ const FDF_SESSIONS = [
   ['2026-11-04', '08:00', '10:00', 'DH105', 'Mr. Metersky'], ['2026-11-04', '10:00', '11:30', 'DH106', 'Mr. Metersky'], ['2026-11-04', '12:30', '14:30', 'DH110', 'Ms. Steinberg'],
   ['2026-11-05', '08:00', '11:00', 'DH103', 'Ms. Ramesha'], ['2026-11-05', '11:30', '13:30', 'DH105', 'Mr. Metersky'], ['2026-11-05', '13:30', '15:00', 'DH106', 'Mr. Metersky'],
   ['2026-11-06', '08:00', '10:00', 'DH105', 'Mr. Metersky'], ['2026-11-06', '10:00', '11:30', 'DH106', 'Mr. Metersky'], ['2026-11-06', '12:30', '14:30', 'DH110', 'Ms. Steinberg'],
-].map(([date, start, end, code, who]) => ({ id: `fdf_${date}_${code}_${start.replace(':', '')}`, src: 's', date, start, end, code, course: BASE_COURSE_NAMES[code], title: BASE_COURSE_NAMES[code],
-  instructors: [who], mode: 'online', type: 'lecture', kind: 'class', fdf: true }));
+  // Nov 9 – 21
+  ['2026-11-09', '08:00', '10:00', 'DH105', 'Mr. Metersky'], ['2026-11-09', '10:00', '11:30', 'DH106', 'Mr. Metersky'], ['2026-11-09', '12:30', '14:30', 'DH110', 'Ms. Steinberg'],
+  ['2026-11-10', '08:00', '10:00', 'DH105', 'Mr. Metersky'], ['2026-11-10', '10:00', '11:30', 'DH106', 'Mr. Metersky'], ['2026-11-10', '12:00', '15:00', 'DH103', 'Ms. Ramesha'],
+  ['2026-11-11', '13:30', '15:30', 'DH105', 'Mr. Metersky'], ['2026-11-11', '15:30', '17:00', 'DH106', 'Mr. Metersky'],
+  ['2026-11-12', '08:00', '10:00', 'DH105', 'Mr. Metersky'], ['2026-11-12', '11:30', '14:30', 'DH102', 'Ms. Dhir'], ['2026-11-12', '15:00', '17:00', 'DH108', 'Mr. Metersky'],
+  ['2026-11-13', '09:00', '12:00', 'DH104', 'Ms. Steinberg'], ['2026-11-13', '12:30', '14:30', 'DH105', 'Mr. Metersky'],
+  ['2026-11-16', '08:00', '11:00', 'DH104', 'Ms. Steinberg'], ['2026-11-16', '12:30', '14:30', 'DH105', 'Mr. Metersky'], ['2026-11-16', '14:30', '15:30', 'DH106', 'Mr. Metersky'],
+  ['2026-11-17', '08:00', '10:00', 'DH105', 'Mr. Metersky'], ['2026-11-17', '10:00', '13:00', 'DH102', 'Ms. Dhir'], ['2026-11-17', '14:30', '16:30', 'DH108', 'Mr. Metersky'],
+  ['2026-11-18', '08:00', '10:00', 'DH106', 'Mr. Metersky', { kind: 'exam', mode: 'in-person', detail: 'FINAL EXAM · Classroom A & Lab' }],
+  ['2026-11-18', '12:30', '14:30', 'DH110', 'Ms. Steinberg'], ['2026-11-18', '14:30', '16:30', 'DH105', 'Mr. Metersky'],
+  ['2026-11-20', '08:00', '11:00', 'DH103', 'Ms. Ramesha'], ['2026-11-20', '11:00', '13:00', 'DH105', 'Mr. Metersky'],
+].map(([date, start, end, code, who, extra]) => ({ id: `fdf_${date}_${code}_${start.replace(':', '')}`, src: 's', date, start, end, code, course: BASE_COURSE_NAMES[code], title: BASE_COURSE_NAMES[code],
+  instructors: [who], mode: 'online', type: 'lecture', kind: 'class', fdf: true, ...(extra || {}) }));
 const fdfOn = () => !!data.settings.fdf && currentLevel() === 1;
 // Your edits to timetable classes live in sessionMeta[id].ov and are laid over the official timetable.
 const overrideSig = () => (fdfOn() ? 'fdf;' : '') + Object.entries(data.sessionMeta).filter(([, m]) => m.ovAt).map(([k, m]) => k + m.ovAt).join(',');
@@ -188,7 +208,7 @@ function indexSessions() {
   const sessions = base.map((s) => {
     const ov = data.sessionMeta[s.id]?.ov;
     return ov && Object.keys(ov).length ? { ...s, ...ov, edited: true, base: s } : s;
-  }).sort((a, b) => (a.date + (a.start || '')).localeCompare(b.date + (b.start || '')));
+  }).filter((s) => !s.hidden).sort((a, b) => (a.date + (a.start || '')).localeCompare(b.date + (b.start || '')));
   SCHED = { ...LEVEL_SCHED, sessions };
   byDate.clear();
   byId.clear();
@@ -643,7 +663,8 @@ const narrowMQ = matchMedia('(max-width: 760px)');
 // Holiday skins switch on by themselves for a few days a year (MM-DD, inclusive) and can be turned off
 // in Settings. "?skin=halloween" in the address shows one any day ("?skin=" turns that off again).
 const HOLIDAYS = [
-  { id: 'halloween', name: 'Halloween', icon: '🎃', from: '10-25', to: '11-01', day: '10-31' },
+  { id: 'halloween', name: 'Halloween', icon: '🎃', from: '10-25', to: '11-01', day: '10-31' }, // listed first: wins inside fall
+  { id: 'fall', name: 'Fall', icon: '🍁', from: '09-22', to: '12-20' },
 ];
 function holidayPreview() {
   try {
@@ -672,11 +693,14 @@ function applyHoliday() {
   $('#holiday-deco')?.remove();
   const fab = $('.fab .smiley');
   if (fab) { fabSmiley ||= fab.outerHTML; fab.outerHTML = h?.id === 'halloween' ? PUMPKIN.replace('class="smiley pumpkin"', 'class="smiley pumpkin fab-smile"') : fabSmiley; }
-  if (h?.id !== 'halloween') return;
+  if (!h) return;
   const deco = document.createElement('div');
   deco.id = 'holiday-deco';
   deco.setAttribute('aria-hidden', 'true');
-  deco.innerHTML = `<div class="web">${WEB}</div><div class="spider"><i></i></div>${[1, 2, 3].map((i) => `<div class="bat b${i}">${BAT}</div>`).join('')}`;
+  if (h.id === 'halloween') deco.innerHTML = `<div class="web">${WEB}</div><div class="spider"><i></i></div>${[1, 2, 3].map((i) => `<div class="bat b${i}">${BAT}</div>`).join('')}`;
+  // Fall: a handful of leaves drifting down slowly, each with its own lane, size, speed and delay.
+  if (h.id === 'fall') deco.innerHTML = [['🍁', 6, 22, 0], ['🍂', 18, 27, -9], ['🍁', 33, 31, -19], ['🍂', 52, 25, -4], ['🍁', 68, 29, -14], ['🍂', 84, 24, -21], ['🍁', 94, 33, -27]]
+    .map(([ch, x, dur, delay], i) => `<span class="leaf l${i}" style="left:${x}%;animation-duration:${dur}s;animation-delay:${delay}s">${ch}</span>`).join('');
   document.body.appendChild(deco);
 }
 let fabSmiley = '';
@@ -705,7 +729,7 @@ function renderHeader() {
   btn.title = prog.remaining.length ? `Locked: finish your Level ${level} courses to unlock (${prog.remaining.length} left)` : `Go to Level ${level + 1}!`;
   document.documentElement.classList.toggle('fdf', fdfOn());
   $('#fdf-chip')?.remove();
-  if (fdfOn() && D.today() <= FDF.to) $('#levels').insertAdjacentHTML('afterend', `<button type="button" class="fdf-chip" id="fdf-chip" data-action="settings" title="Oct 26 – Nov 7 online timetable is on — tap to change in Settings">✊ FDF mode</button>`);
+  if (fdfOn() && D.today() <= FDF.to) $('#levels').insertAdjacentHTML('afterend', `<button type="button" class="fdf-chip" id="fdf-chip" data-action="settings" title="Oct 26 – Nov 21 online timetable is on — tap to change in Settings">✊ FDF mode</button>`);
   $('#term-sub').textContent = `Level ${level} of ${levels} · ${fmtDate(t.start, { year: true }).replace(/^\w+, /, '')} – ${fmtDate(t.end, { year: true }).replace(/^\w+, /, '')}`;
   const start = D.sow(D.parse(t.start)), end = D.parse(t.end);
   const totalWeeks = Math.ceil((D.add(end, 1) - start) / (7 * 864e5));
@@ -1834,7 +1858,7 @@ function renderNotes(v) {
             <span class="muted small" id="ne-saved">Saved</span>
             <button class="btn danger sm" id="ne-del">${ICON.trash}Delete</button>
           </div>
-          <textarea id="ne-body" placeholder="Write anything — lecture notes, questions for the instructor, study plan…">${esc(active.body)}</textarea>
+          ${NOTE_TOOLS('ne-body')}<textarea id="ne-body" placeholder="Write anything — lecture notes, questions for the instructor, study plan…  (Tab indents · start a line with - for a list)">${esc(active.body)}</textarea>
         </div>` : `<div class="empty">${isSession ? 'Choose a session note to open its class.' : 'Select a note or create a new one.'}</div>`}</div>
     </div>`;
 
@@ -1877,6 +1901,83 @@ function bindNoteEditor(active) {
     };
   }
 }
+/* ---- Notes typing helpers (every notes box) ----
+   Tab / Shift+Tab indent and outdent the current line(s); a line that starts with "- ", "• ", "* " or "1. "
+   is a list item, and Enter continues the list (Enter on an empty item ends it). */
+const LIST_RE = /^(\s*)([-•*]|\d+[.)])(\s+)/;
+const INDENT = '  ';
+function taReplace(ta, start, end, text, selStart, selEnd) {
+  ta.focus();
+  ta.setSelectionRange(start, end);
+  // execCommand keeps the browser's undo history; fall back to setRangeText where it isn't supported.
+  if (!document.execCommand('insertText', false, text)) {
+    ta.setRangeText(text, start, end, 'end');
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  if (selStart != null) ta.setSelectionRange(selStart, selEnd ?? selStart);
+}
+function noteIndent(ta, out) {
+  const v = ta.value, a = ta.selectionStart, b = ta.selectionEnd;
+  const ls = v.lastIndexOf('\n', a - 1) + 1;
+  const le = v.indexOf('\n', b === a ? b : b - 1); const lineEnd = le === -1 ? v.length : le;
+  const multi = v.slice(a, b).includes('\n');
+  const block = v.slice(ls, lineEnd);
+  // A plain caret on a non-list line just inserts spaces (or removes them before the caret).
+  if (!multi && !LIST_RE.test(block) && !out) return taReplace(ta, a, b, INDENT, a + INDENT.length);
+  const lines = block.split('\n');
+  let removedFirst = 0, delta = 0;
+  const next = lines.map((ln, i) => {
+    if (!out) { delta += INDENT.length; if (i === 0) removedFirst = -INDENT.length; return INDENT + ln; }
+    const n = ln.startsWith(INDENT) ? INDENT.length : ln.startsWith(' ') || ln.startsWith('\t') ? 1 : 0;
+    delta -= n; if (i === 0) removedFirst = n;
+    return ln.slice(n);
+  }).join('\n');
+  const na = Math.max(ls, a - removedFirst);
+  taReplace(ta, ls, lineEnd, next, multi ? ls : na, multi ? ls + next.length : Math.max(ls, b - removedFirst));
+}
+function noteEnter(ta) {
+  const v = ta.value, a = ta.selectionStart;
+  if (a !== ta.selectionEnd) return false;
+  const ls = v.lastIndexOf('\n', a - 1) + 1;
+  const line = v.slice(ls, a);
+  const m = line.match(LIST_RE);
+  if (!m) return false;
+  if (line.trim() === m[2] && v.slice(a, (v.indexOf('\n', a) + 1 || v.length + 1) - 1).trim() === '') {
+    // Empty item: end the list (remove the marker).
+    taReplace(ta, ls, a, '', ls);
+    return true;
+  }
+  const marker = /\d/.test(m[2]) ? `${parseInt(m[2], 10) + 1}${m[2].slice(-1)}` : m[2];
+  const ins = `\n${m[1]}${marker}${m[3]}`;
+  taReplace(ta, a, a, ins, a + ins.length);
+  return true;
+}
+function toggleNoteList(ta) {
+  const v = ta.value, a = ta.selectionStart, b = ta.selectionEnd;
+  const ls = v.lastIndexOf('\n', a - 1) + 1;
+  const le = v.indexOf('\n', b); const lineEnd = le === -1 ? v.length : le;
+  const lines = v.slice(ls, lineEnd).split('\n');
+  const allList = lines.every((ln) => LIST_RE.test(ln) || !ln.trim());
+  const next = lines.map((ln) => (allList ? ln.replace(LIST_RE, '$1') : ln.trim() || lines.length === 1 ? ln.replace(/^(\s*)/, '$1- ') : ln)).join('\n');
+  taReplace(ta, ls, lineEnd, next, ls + next.length);
+}
+document.addEventListener('keydown', (e) => {
+  const ta = e.target;
+  if (ta.tagName !== 'TEXTAREA' || e.isComposing || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === 'Tab') { e.preventDefault(); noteIndent(ta, e.shiftKey); }
+  else if (e.key === 'Enter' && !e.shiftKey && noteEnter(ta)) e.preventDefault();
+}, true);
+// Small List / Indent / Outdent bar for touch screens (no Tab key there); also handy with a mouse.
+const NOTE_TOOLS = (forId) => `<div class="note-tools" data-for="${forId}"><button type="button" data-nt="list" title="Bulleted list (type - )">• List</button><button type="button" data-nt="in" title="Indent (Tab)">⇥ Indent</button><button type="button" data-nt="out" title="Outdent (Shift+Tab)">⇤ Outdent</button></div>`;
+document.addEventListener('pointerdown', (e) => { if (e.target.closest('.note-tools button')) e.preventDefault(); }); // keep the textarea focused
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('.note-tools [data-nt]');
+  if (!b) return;
+  const ta = document.getElementById(b.closest('.note-tools').dataset.for);
+  if (!ta) return;
+  if (b.dataset.nt === 'list') toggleNoteList(ta); else noteIndent(ta, b.dataset.nt === 'out');
+});
+
 // "5 min ago", "Yesterday", "Oct 3"
 function agoText(ts) {
   if (!ts) return '';
@@ -1898,7 +1999,7 @@ function renderNotesMobile(v, { list, isSession, active }) {
       </div>
       <input class="nm-title" id="ne-title" value="${esc(active.title)}" placeholder="Title" aria-label="Title">
       <select id="ne-course" class="nm-course" aria-label="Course">${courseOptions(active.course)}</select>
-      <textarea id="ne-body" class="nm-body" placeholder="Write anything — lecture notes, questions for the instructor, study plan…">${esc(active.body)}</textarea>
+      ${NOTE_TOOLS('ne-body')}<textarea id="ne-body" class="nm-body" placeholder="Write anything — lecture notes, questions for the instructor, study plan…">${esc(active.body)}</textarea>
     </div>`;
     $('#nm-back').onclick = () => { ui.noteActive = null; ui.anim = 'nav-prev'; render(); };
     bindNoteEditor(active);
@@ -2149,12 +2250,13 @@ function closeModal({ instant = false } = {}) {
   if (cb) cb();
   closeModal.lastFocus?.focus?.();
 }
-const modalHead = (title, sub = '') => `<header><span class="bar"></span><div style="flex:1"><h2>${title}</h2>${sub ? `<div class="muted small">${sub}</div>` : ''}</div>
-  <button class="icon-btn" data-close aria-label="Close">${ICON.x.replace('<svg', '<svg style="width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2"')}</button></header>`;
+const TRASH_BTN = (id, title) => `<button type="button" class="icon-btn head-del" id="${id}" title="${title}" aria-label="${title}">${ICON.trash.replace('<svg', '<svg style="width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2"')}</button>`;
+const modalHead = (title, sub = '', extra = '') => `<header><span class="bar"></span><div style="flex:1"><h2>${title}</h2>${sub ? `<div class="muted small">${sub}</div>` : ''}</div>
+  ${extra}<button class="icon-btn" data-close aria-label="Close">${ICON.x.replace('<svg', '<svg style="width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2"')}</button></header>`;
 
 /* ---- Class session details ---- */
 // Save changes to one timetable class; only the fields that differ from the official timetable are kept.
-const OV_FIELDS = ['date', 'start', 'end', 'title', 'detail', 'mode', 'kind', 'cancelled', 'code', 'color', 'icon', 'type', 'task', 'track'];
+const OV_FIELDS = ['date', 'start', 'end', 'title', 'detail', 'mode', 'kind', 'cancelled', 'hidden', 'code', 'color', 'icon', 'type', 'task', 'track'];
 const baseSession = (id) => LEVEL_SCHED.sessions.find((x) => x.id === id) || FDF_SESSIONS.find((x) => x.id === id);
 function setSessionOv(id, patch) {
   const base = baseSession(id);
@@ -2163,13 +2265,39 @@ function setSessionOv(id, patch) {
   for (const f of OV_FIELDS) {
     if (!(f in ov)) continue;
     const v = ov[f], b = base[f];
-    const same = f === 'cancelled' || f === 'task' ? !v === !b : f === 'track' ? (v !== false) === (b !== false) : f === 'type' ? !v || v === 'class' : (v ?? '') === (b ?? '');
+    const same = f === 'cancelled' || f === 'task' || f === 'hidden' ? !v === !b : f === 'track' ? (v !== false) === (b !== false) : f === 'type' ? !v || v === 'class' : (v ?? '') === (b ?? '');
     if (same) delete ov[f];
   }
   setMeta(id, { ov: Object.keys(ov).length ? ov : null, ovAt: Date.now() });
 }
 // Timetable classes open in the same editor as new calendar entries; saving writes your changes
 // over the official timetable (see setSessionOv) instead of creating a new entry.
+// Top-right 🗑 on a class: cancel it (stays, faded) or take it off the schedule, with Undo.
+function quickRemoveClass(id) {
+  const s = byId.get(id);
+  if (!s) return;
+  const el = document.createElement('div');
+  el.className = 'modal-backdrop scope-backdrop';
+  el.innerHTML = `<div class="modal scope qr-sheet" role="dialog" aria-modal="true"><div class="body">
+    <h2 style="margin:0;font-size:16px">${esc(entryTitle(s))} · ${fmtDate(s.date)}</h2>
+    <button type="button" class="st-opt" data-qr="cancel"><span class="att-chip late">✕ Cancel</span><span>Cancel this class</span><span class="muted small">Stays on the calendar, faded and crossed out</span></button>
+    <button type="button" class="st-opt" data-qr="remove"><span class="att-chip missed">🗑 Remove</span><span>Remove from schedule</span><span class="muted small">Hidden everywhere — restore any time in Settings</span></button>
+    </div><footer><button class="btn" data-qr="back">Back</button></footer></div>`;
+  document.body.appendChild(el);
+  const done = () => el.remove();
+  el.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-qr]');
+    if (!b && e.target !== el) return;
+    done();
+    const what = b?.dataset.qr;
+    if (what !== 'cancel' && what !== 'remove') return;
+    const prev = getMeta(id).ov ? structuredClone(getMeta(id).ov) : null;
+    setSessionOv(id, what === 'cancel' ? { cancelled: true } : { hidden: true });
+    commit();
+    closeModal();
+    toast(what === 'cancel' ? 'Class cancelled' : 'Class removed from the schedule', { action: () => { setMeta(id, { ov: prev, ovAt: Date.now() }); commit(); toast('Restored'); } });
+  });
+}
 function openSessionEditor(id) { openItemEditor({}, { sessionId: id }); }
 function openSession(id) {
   const s = byId.get(id);
@@ -2180,7 +2308,7 @@ function openSession(id) {
   const sameCourseNext = SCHED.sessions.find((x) => x.code === s.code && x.date > s.date && relevance(x) !== 'other');
   let changed = false;
   const modal = openModal(`
-    ${modalHead(`${s.code ? `<span style="color:${courseColor(s.code)}">${codeLabel(s.code)}</span> · ` : ''}${esc(s.title)}`, `${fmtDate(s.date, { long: true, year: true })}${s.start ? ` · ${fmtRange(s.start, s.end)}` : ''}`)}
+    ${modalHead(`${s.code ? `<span style="color:${courseColor(s.code)}">${codeLabel(s.code)}</span> · ` : ''}${esc(s.title)}`, `${fmtDate(s.date, { long: true, year: true })}${s.start ? ` · ${fmtRange(s.start, s.end)}` : ''}`, isClosure(s) ? '' : TRASH_BTN('ses-qdel', 'Cancel or remove this class'))}
     <div class="body">
       <div style="display:flex;gap:6px;flex-wrap:wrap">${modeChip(s.mode)}${kindChip(s)}${groupChip(s)}
         ${s.type ? `<span class="chip mode">${{ lab: 'Lab', clinic: 'Clinic', lecture: 'Lecture', session: 'Session', program: 'Program' }[s.type] || s.type}</span>` : ''}
@@ -2198,8 +2326,8 @@ function openSession(id) {
         <label class="check"><input type="checkbox" data-m="reviewed" ${m.reviewed ? 'checked' : ''}> Notes reviewed</label>
         ${hasCarpool(s) ? `<label class="check"><input type="checkbox" data-m="carpool" ${m.carpool ? 'checked' : ''}> 🚗 ${esc(carpoolCfg().onText)} <span class="muted small">(off: ${esc(carpoolCfg().offText)})</span></label>` : ''}
       </div>
-      <label class="field">Class notes
-        <textarea id="ses-note" placeholder="Notes for this class — what was covered, homework mentioned, questions…">${esc(m.note || '')}</textarea></label>
+      <div class="field"><span class="form-label">Class notes</span>
+        ${NOTE_TOOLS('ses-note')}<textarea id="ses-note" placeholder="Notes for this class — what was covered, homework mentioned, questions…">${esc(m.note || '')}</textarea></div>
       ${(m.subtasks || []).length || (m.attachments || []).length ? `<div class="ses-extra">${(m.subtasks || []).length ? `<span>☑ ${m.subtasks.filter((x) => x.done).length}/${m.subtasks.length} steps</span>` : ''}
         ${(m.attachments || []).map((f, i) => `<a href="#" data-sfo="${i}">${ICON.clip}${esc(f.name)}</a>`).join('')}<button type="button" class="link-btn" id="ses-edit2">Open in editor</button></div>` : ''}
       ${related.length ? `<div><div class="section-title" style="margin-top:0">Due this day</div><div class="card">${related.map(taskRowHTML).join('')}</div></div>` : ''}
@@ -2225,6 +2353,7 @@ function openSession(id) {
   $$('[data-toggle]', modal).forEach((cb) => (cb.onchange = () => { changed = true; toggleItem(cb.dataset.toggle, cb.checked); }));
   $('#ses-add').onclick = () => openItemEditor({ course: s.code || null, date: s.date, type: 'assignment' });
   $('#ses-edit').onclick = () => openSessionEditor(id);
+  $('#ses-qdel')?.addEventListener('click', () => quickRemoveClass(id));
   if ($('#ses-edit2')) $('#ses-edit2').onclick = () => openSessionEditor(id);
   $$('[data-sfo]', modal).forEach((el) => (el.onclick = (e) => { e.preventDefault(); openAttachment(m.attachments[+el.dataset.sfo]); }));
   if (s.periodId) $('#ses-period').onclick = () => openLevelWizard(s.level, { step: 2 });
@@ -2400,8 +2529,8 @@ function openItemEditor(seed = {}, { occ = null, sessionId = null } = {}) {
   const r = it.recur || { freq: 'none', interval: 1, byDay: [], until: '' };
   const flag = (id, on, label, hint) => `<label class="switch-row"><input type="checkbox" id="${id}" ${on ? 'checked' : ''}><span class="sw-track"></span><span><b>${label}</b><span class="muted small">${hint}</span></span></label>`;
   const modal = openModal(`
-    ${ses ? modalHead('Edit class', `Official timetable: ${sesBase.code ? codeLabel(sesBase.code) + ' · ' : ''}${fmtDate(sesBase.date, { long: true })}${sesBase.start ? ' · ' + fmtRange(sesBase.start, sesBase.end) : ''}`)
-      : modalHead(existing ? 'Edit entry' : 'New calendar entry', recurring ? `🔁 ${esc(recurText(existing))}` : 'Everything is optional except the title — set it up however you like.')}
+    ${ses ? modalHead('Edit class', `Official timetable: ${sesBase.code ? codeLabel(sesBase.code) + ' · ' : ''}${fmtDate(sesBase.date, { long: true })}${sesBase.start ? ' · ' + fmtRange(sesBase.start, sesBase.end) : ''}`, TRASH_BTN('it-qdel-ses', 'Cancel or remove this class'))
+      : modalHead(existing ? 'Edit entry' : 'New calendar entry', recurring ? `🔁 ${esc(recurText(existing))}` : 'Everything is optional except the title — set it up however you like.', existing ? TRASH_BTN('it-qdel', 'Delete this entry') : '')}
     <form class="body ed-body" id="it-form" autocomplete="off">
       <div class="ed-main">
       <div class="field"><span class="form-label">Type</span><div class="qc-cats type-chips" id="it-types"></div></div>
@@ -2632,7 +2761,9 @@ function openItemEditor(seed = {}, { occ = null, sessionId = null } = {}) {
   $('#it-save').onclick = save;
   if (ses?.edited) $('#it-reset').onclick = () => { setMeta(sessionId, { ov: null, ovAt: Date.now() }); closeModal(); commit(); toast('Back to the timetable version'); };
   $('#it-form').onsubmit = (e) => { e.preventDefault(); save(); };
+  if (ses) $('#it-qdel-ses').onclick = () => quickRemoveClass(sessionId);
   if (existing) {
+    $('#it-qdel').onclick = () => $('#it-del').click();
     $('#it-del').onclick = async () => {
       if (!(await deleteItem(existing, occ))) return;
       closeModal();
@@ -2688,8 +2819,9 @@ function openSettings() {
       <div class="section-title" style="margin:6px 0 0">Entry types</div>
       <div class="type-preview">${typesList().map((t) => `<span class="qc-cat" style="--c:${esc(t.color)}">${t.icon} ${esc(t.name)}</span>`).join('')}<button type="button" class="btn sm" id="st-types">✎ Manage types</button></div>
       <label class="check small"><input type="checkbox" id="st-fun" ${st.fun !== false ? 'checked' : ''}> Hearts & stars burst out of some clicks ♥★</label>
-      <label class="switch-row fdf-set"><input type="checkbox" id="st-fdf" ${st.fdf ? 'checked' : ''}><span class="sw-track"></span><span><b>✊ Fuck Doug Ford mode</b><span class="muted small">Swaps in the online timetable for Oct 26 – Nov 7 (DH 105, 106, 110 and 103 online; no pre-clinic or rad lab). Every view, deadline list and printout follows it. Turn it off to go back to the official timetable — notes and ticks on both versions are kept.</span></span></label>
-      <div class="hol-set"><label class="check small"><input type="checkbox" id="st-hol" ${st.holidays !== false ? 'checked' : ''}> Holiday themes — the site dresses up by itself for a few days:
+      <label class="switch-row fdf-set"><input type="checkbox" id="st-fdf" ${st.fdf ? 'checked' : ''}><span class="sw-track"></span><span><b>✊ Fuck Doug Ford mode</b><span class="muted small">Swaps in the online timetables for Oct 26 – Nov 21 (no pre-clinic or rad lab; DH 106 final exam Nov 18 in Classroom A & Lab). Every view, deadline list and printout follows it. Turn it off to go back to the official timetable — notes and ticks on both versions are kept.</span></span></label>
+      ${(() => { const n = Object.values(data.sessionMeta).filter((m) => m.ov?.hidden).length; return n ? `<div class="hol-set"><span class="small">🗑 ${n} class${n === 1 ? '' : 'es'} removed from the schedule</span><button type="button" class="btn sm" id="st-unhide">Restore all</button></div>` : ''; })()}
+      <div class="hol-set"><label class="check small"><input type="checkbox" id="st-hol" ${st.holidays !== false ? 'checked' : ''}> Seasonal & holiday themes — the site dresses up by itself:
         ${HOLIDAYS.map((h) => `${h.icon} ${h.name} (${fmtDate('2026-' + h.from).replace(/^\w+, /, '')} – ${fmtDate('2026-' + h.to).replace(/^\w+, /, '')})`).join(', ')}</label></div>
       <div class="section-title" style="margin:6px 0 0">Levels</div>
       <div class="card level-list">${[...Array(MAX_LEVEL)].map((_, i) => {
@@ -2728,9 +2860,13 @@ function openSettings() {
   };
   ['#st-cp-oncolor', '#st-cp-offcolor', '#st-cp-ontext', '#st-cp-offtext'].forEach((sel) => ($(sel).onchange = saveCarpool));
   $('#st-types').onclick = () => openTypesManager(() => openSettings());
+  $('#st-unhide')?.addEventListener('click', () => {
+    for (const [id, m] of Object.entries(data.sessionMeta)) if (m.ov?.hidden) setSessionOv(id, { hidden: false });
+    commit(); closeModal(); toast('Removed classes restored');
+  });
   $('#st-fdf').onchange = (e) => {
     data.settings.fdf = e.target.checked; data.settingsUpdatedAt = Date.now(); commit();
-    toast(e.target.checked ? '✊ Fuck Doug Ford mode on — Oct 26 – Nov 7 online timetable' : 'Back to the official timetable');
+    toast(e.target.checked ? '✊ Fuck Doug Ford mode on — Oct 26 – Nov 21 online timetable' : 'Back to the official timetable');
   };
   $('#st-hol').onchange = (e) => { data.settings.holidays = e.target.checked; data.settingsUpdatedAt = Date.now(); commit(); };
   $('#st-fun').onchange = (e) => { data.settings.fun = e.target.checked; data.settingsUpdatedAt = Date.now(); commit({ rerender: false }); if (e.target.checked) burst(innerWidth / 2, innerHeight / 2); };
@@ -3433,8 +3569,10 @@ function openLevelWizard(n, { step = 0 } = {}) {
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 function burst(x, y, { count = 9, spread = 70, size = 18 } = {}) {
   if (reducedMotion.matches) return;
-  const glyphs = activeHoliday()?.id === 'halloween'
+  const hol = activeHoliday()?.id;
+  const glyphs = hol === 'halloween'
     ? [['🎃', ''], ['👻', ''], ['🦇', ''], ['🍬', ''], ['★', '#ff922b'], ['✦', '#9775fa']]
+    : hol === 'fall' ? [['🍁', ''], ['🍂', ''], ['🍃', ''], ['★', '#f59f00'], ['♥', '#c2410c'], ['✦', '#e8590c']]
     : [['♥', '#ff4d8d'], ['♥', '#ff8fb8'], ['❤', '#f03e3e'], ['★', '#fcc419'], ['✦', '#ffd43b'], ['★', '#ffa94d']];
   for (let i = 0; i < count; i++) {
     const [ch, color] = glyphs[Math.floor(Math.random() * glyphs.length)];
