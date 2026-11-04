@@ -3777,6 +3777,18 @@ const BRIGHTSPACE_DEADLINES = [
   ['DH108', 'FINAL EXAM (Brightspace)', '2027-03-03', '13:00', 35, '', false, 'The exam is on the timetable at 8:00 am; Brightspace closes at 1:00 pm.'],
   ['DH107', 'Cultural Summary – A reflection', '2027-03-05', '23:59', 5],
 ];
+// From the CADH class group chat's updated list (Nov 2026, after the strike changes). [course, title, date, time, exam?]
+// Already in the tracker and left alone: Crossword 2 (Brightspace, Nov 14 – the chat says "Friday", but Nov 14 is a
+// Saturday), Test 1 Flashcards (Brightspace, Nov 15) and the Rad final (FDF timetable, Nov 18 8:00 in person).
+const CHAT_DEADLINES = [
+  ['DH106', 'Rad Test 2', '2026-11-06', '10:00', true],
+  ['DH106', 'Rad Assignment 1', '2026-11-07', '23:59', false],
+  ['DH105', 'APP Test 2', '2026-11-10', '08:00', true],
+  ['DH103', 'Dental Anatomy Group Assignment', '2026-11-15', '23:59', false],
+  ['DH103', 'Dental Anatomy Test 1', '2026-11-20', '08:00', true],
+];
+// Microbiology Test 1 moved from Oct 30 (Brightspace "Test 1A") to Thu Nov 12, 3:00 pm.
+const CHAT_MOVES = [{ id: 't_bs_06', from: '2026-10-30', date: '2026-11-12', start: '15:00', note: 'Moved to Thu Nov 12, 3:00 pm (class group chat update).' }];
 // Notion deadlines that are also on Brightspace: Brightspace gives them an 11:59 pm due time.
 const BRIGHTSPACE_TIMES = { t_seed_06: '23:59', t_seed_07: '23:59', t_seed_08: '23:59', t_seed_09: '23:59', t_seed_10: '23:59' };
 // DH 101 Preclinical Practice I course schedule. Weeks follow the academic calendar: week 1 = Oct 5,
@@ -3897,6 +3909,21 @@ function seedDeadlines() {
   for (const [id, start] of Object.entries(BRIGHTSPACE_TIMES)) {
     const it = data.items.find((x) => x.id === id);
     if (it && !it.start && it.updatedAt === 1) { it.start = start; it.updatedAt = 2; added++; }
+  }
+  CHAT_DEADLINES.forEach(([course, title, date, start, exam], i) => {
+    const id = `t_chat_${String(i + 1).padStart(2, '0')}`;
+    if (data.deleted[id] || data.items.some((x) => x.id === id) || findDuplicate({ title, date, course, kind: exam ? 'exam' : 'assignment' })) return;
+    data.items.push({ id, type: exam ? 'exam' : 'assignment', task: true, exam, kind: exam ? 'exam' : 'assignment', title, course, date, start, end: '', mode: '',
+      priority: 'normal', notes: 'From the CADH class group chat (updated list).', subtasks: [], attachments: [], status: 'not-started', done: false,
+      grade: '', weight: '', createdAt: 1, updatedAt: 1 });
+    added++;
+  });
+  for (const mv of CHAT_MOVES) {
+    const it = data.items.find((x) => x.id === mv.id);
+    if (!it || it.date !== mv.from || isClosed(statusOf(it))) continue; // already moved, edited or finished
+    Object.assign(it, { date: mv.date, start: mv.start, notes: [it.notes, mv.note].filter(Boolean).join('\n') });
+    it.updatedAt = Date.now();
+    added++;
   }
   added += seedOutline();
   if (added) commit({ rerender: false });
