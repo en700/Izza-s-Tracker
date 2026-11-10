@@ -105,6 +105,8 @@ A password-protected timetable and school-year tracker for the dental hygiene pr
   exam on Nov 18 in Classroom A & Lab; no pre-clinic or rad lab) in place of the official timetable for those four weeks, across every view, the deadline list,
   the Courses page and printouts. A red "✊ FDF mode" chip shows in the header while it's on. Turning it off brings the official
   timetable back; notes and ticks on both versions are kept. Your own entries and deadlines aren't changed.
+- **Drag to delete.** While you drag an event, a class or a due date in the week grid, a 🗑 bin appears at the left of the calendar;
+  drop it there to delete your own entry (repeating ones ask which) or take a class off the schedule. An **Undo** button follows.
 - **Quick cancel / remove.** The 🗑 at the top right of a class popup (or the class editor) cancels the class (kept, faded and crossed
   out) or removes it from the schedule, with an **Undo** button. Removed classes can be restored in Settings. For your own entries
   the 🗑 deletes the entry.

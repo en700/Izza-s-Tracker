@@ -983,7 +983,7 @@ function renderWeek(v) {
       <div class="wk-allday"><div class="lbl">Due / all day</div>${allday}</div>
       <div class="wk-body" style="height:${px(hi) + PAD}px;--pad:${PAD}px"><div class="wk-times">${times}</div>${colsHTML}</div>
     </div></div>
-    <div class="muted small grid-hint">${narrowMQ.matches ? 'Tap an empty slot to add an event · press and hold, then drag, to choose its length or to move your own events and classes · swipe sideways for the rest of the week.<br>' : ''}Tip: drag on an empty part of the grid to add an event · drag your own events to move them, or their bottom edge to change the length · drag a due date to another day to reschedule it.</div>
+    <div class="muted small grid-hint">${narrowMQ.matches ? 'Tap an empty slot to add an event · press and hold, then drag, to choose its length or to move your own events and classes · swipe sideways for the rest of the week.<br>' : ''}Tip: drag on an empty part of the grid to add an event · drag events to move them, or their bottom edge to change the length · drag a due date to another day to reschedule it · drop anything on the 🗑 that appears on the left to delete it.</div>
     `);
   bindWeekGrid(v, { lo, hi, slot, PAD });
 }
@@ -992,6 +992,48 @@ function renderWeek(v) {
 let suppressClickUntil = 0, touchHolding = false;
 // While a press-and-hold drag is running, stop the page from scrolling under the finger.
 document.addEventListener('touchmove', (e) => { if (touchHolding) e.preventDefault(); }, { passive: false });
+// While an event is being dragged, a trash bin appears at the left of the calendar; drop on it to delete.
+function showDragTrash(root) {
+  const week = $('.week', root) || root;
+  const r = week.getBoundingClientRect();
+  const el = document.createElement('div');
+  el.className = 'drag-trash';
+  el.setAttribute('aria-hidden', 'true');
+  el.innerHTML = `${ICON.trash}<span>Drop to delete</span>`;
+  // Just left of the calendar when there's room, otherwise over its time column.
+  el.style.left = Math.max(8, r.left - 92) + 'px';
+  el.style.top = clamp(innerHeight / 2 - 50, Math.max(8, r.top), innerHeight - 120) + 'px';
+  document.body.appendChild(el);
+  return {
+    hit(x, y) {
+      const b = el.getBoundingClientRect(), pad = 14;
+      const on = x >= b.left - pad && x <= b.right + pad && y >= b.top - pad && y <= b.bottom + pad;
+      el.classList.toggle('hot', on);
+      return on;
+    },
+    remove() { el.classList.add('leaving'); setTimeout(() => el.remove(), 180); },
+  };
+}
+// Drop-on-trash: your own entries are deleted (repeating ones ask which), timetable classes are taken off the
+// schedule. Both offer Undo where they can.
+async function trashDropped(isSes, id, occ) {
+  if (isSes) {
+    const prev = getMeta(id).ov ? structuredClone(getMeta(id).ov) : null;
+    setSessionOv(id, { hidden: true });
+    commit();
+    return toast('Class removed from the schedule', { action: () => { setMeta(id, { ov: prev, ovAt: Date.now() }); commit(); toast('Restored'); } });
+  }
+  const it = data.items.find((i) => i.id === id);
+  if (!it) return render();
+  if (isRecurring(it)) {
+    if (await deleteItem(it, occ)) { commit(); toast('Deleted'); } else render();
+    return;
+  }
+  const copy = structuredClone(it);
+  remove('items', it.id);
+  commit();
+  toast(`Deleted “${it.title}”`, { action: () => { delete data.deleted[copy.id]; upsert('items', copy); commit(); toast('Restored'); } });
+}
 function bindWeekGrid(root, g) {
   const body = $('.wk-body', root);
   if (!body) return;
@@ -1013,7 +1055,7 @@ function bindWeekGrid(root, g) {
     e.preventDefault();
     const cells = $$('.wk-allday .cell[data-day]', root);
     const from = occ || it.date;
-    let ghost = null, target = null;
+    let ghost = null, target = null, trash = null, overTrash = false;
     const cellAt = (x) => cells.find((c) => { const r = c.getBoundingClientRect(); return x >= r.left && x < r.right; });
     const mark = (c) => {
       if (c === target) return;
@@ -1035,10 +1077,13 @@ function bindWeekGrid(root, g) {
         document.body.appendChild(ghost);
         pill.classList.add('drag-src');
         document.body.classList.add('dragging-pill');
+        trash = showDragTrash(root);
       }
       ghost.style.left = ev.clientX - 14 + 'px';
       ghost.style.top = ev.clientY - 10 + 'px';
-      mark(cellAt(ev.clientX));
+      overTrash = trash.hit(ev.clientX, ev.clientY);
+      ghost.classList.toggle('to-trash', overTrash);
+      mark(overTrash ? null : cellAt(ev.clientX));
     };
     const up = () => {
       window.removeEventListener('pointermove', move);
@@ -1050,6 +1095,8 @@ function bindWeekGrid(root, g) {
       document.body.classList.remove('dragging-pill');
       const to = target?.dataset.day;
       mark(null);
+      trash?.remove();
+      if (overTrash) return trashDropped(false, id, from);
       if (!to || to === from) return;
       moveItem(it, from, to, it.start || '', it.end || '');
       toast(`Moved to ${fmtDate(to)}`);
@@ -1139,11 +1186,14 @@ function bindWeekGrid(root, g) {
     const occ = isSes ? it.date : occ0;
     e.preventDefault();
     const s0 = D.mins(it.start), e0 = D.mins(it.end), dur = e0 - s0;
-    let col = el.closest('.wk-col'), ns = s0, ne = e0, moved = false;
+    let col = el.closest('.wk-col'), ns = s0, ne = e0, moved = false, trash = null, overTrash = false;
     const startY = e.clientY, startX = e.clientX;
     const move = (ev) => {
       if (!moved && Math.hypot(ev.clientX - startX, ev.clientY - startY) < 5) return;
-      if (!moved) { moved = true; el.classList.add('dragging'); el.style.left = '2px'; el.style.width = 'calc(100% - 4px)'; }
+      if (!moved) { moved = true; el.classList.add('dragging'); el.style.left = '2px'; el.style.width = 'calc(100% - 4px)'; if (!resize) trash = showDragTrash(root); }
+      overTrash = !!trash?.hit(ev.clientX, ev.clientY);
+      el.classList.toggle('to-trash', overTrash);
+      if (overTrash) return;
       const delta = snap(((ev.clientY - startY) / g.slot) * 30);
       if (resize) {
         ne = clamp(e0 + delta, s0 + 15, 24 * 60 - 1);
@@ -1163,6 +1213,8 @@ function bindWeekGrid(root, g) {
       window.removeEventListener('pointerup', up);
       if (!moved) return; // plain click: opens the editor
       suppressClickUntil = Date.now() + 400;
+      trash?.remove();
+      if (overTrash) return trashDropped(isSes, id, occ);
       const date = col.dataset.day;
       if (date === occ && ns === s0 && ne === e0) return render();
       if (isSes) {
