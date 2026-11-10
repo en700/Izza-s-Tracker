@@ -1000,14 +1000,17 @@ function showDragTrash(root) {
   el.className = 'drag-trash';
   el.setAttribute('aria-hidden', 'true');
   el.innerHTML = `${ICON.trash}<span>Drop to delete</span>`;
-  // Just left of the calendar when there's room, otherwise over its time column.
-  el.style.left = Math.max(8, r.left - 92) + 'px';
-  el.style.top = clamp(innerHeight / 2 - 50, Math.max(8, r.top), innerHeight - 120) + 'px';
+  // A tall strip down the left of the calendar (in the gutter when there's room, otherwise over the time
+  // column), so dragging left at any height lands on it.
+  const w = 84;
+  el.style.left = (r.left >= w + 16 ? r.left - w - 8 : Math.max(4, r.left)) + 'px';
+  el.style.width = w + 'px';
+  el.style.top = Math.max(8, r.top) + 'px';
+  el.style.bottom = Math.max(8, innerHeight - r.bottom) + 'px';
   document.body.appendChild(el);
   return {
-    hit(x, y) {
-      const b = el.getBoundingClientRect(), pad = 14;
-      const on = x >= b.left - pad && x <= b.right + pad && y >= b.top - pad && y <= b.bottom + pad;
+    hit(x) {
+      const on = x <= el.getBoundingClientRect().right + 6; // anything dragged left past the strip's edge counts
       el.classList.toggle('hot', on);
       return on;
     },
@@ -1186,13 +1189,27 @@ function bindWeekGrid(root, g) {
     const occ = isSes ? it.date : occ0;
     e.preventDefault();
     const s0 = D.mins(it.start), e0 = D.mins(it.end), dur = e0 - s0;
-    let col = el.closest('.wk-col'), ns = s0, ne = e0, moved = false, trash = null, overTrash = false;
+    let col = el.closest('.wk-col'), ns = s0, ne = e0, moved = false, trash = null, overTrash = false, ghost = null;
     const startY = e.clientY, startX = e.clientX;
+    const r0 = el.getBoundingClientRect(), offX = startX - r0.left, offY = startY - r0.top;
+    // Outside the day columns (or over the bin) a floating copy follows the pointer, so the event can leave the grid.
+    const float = (ev, on) => {
+      if (on && !ghost) {
+        ghost = el.cloneNode(true);
+        ghost.classList.add('ev-float');
+        Object.assign(ghost.style, { width: r0.width + 'px', height: Math.min(r0.height, 140) + 'px', top: '', left: '' });
+        document.body.appendChild(ghost);
+        el.classList.add('drag-left');
+      }
+      if (!on && ghost) { ghost.remove(); ghost = null; el.classList.remove('drag-left'); }
+      if (ghost) { ghost.style.left = ev.clientX - Math.min(offX, r0.width - 10) + 'px'; ghost.style.top = ev.clientY - Math.min(offY, 40) + 'px'; ghost.classList.toggle('to-trash', overTrash); }
+    };
     const move = (ev) => {
       if (!moved && Math.hypot(ev.clientX - startX, ev.clientY - startY) < 5) return;
       if (!moved) { moved = true; el.classList.add('dragging'); el.style.left = '2px'; el.style.width = 'calc(100% - 4px)'; if (!resize) trash = showDragTrash(root); }
       overTrash = !!trash?.hit(ev.clientX, ev.clientY);
       el.classList.toggle('to-trash', overTrash);
+      if (!resize) float(ev, overTrash || !colAt(ev.clientX, ev.clientY));
       if (overTrash) return;
       const delta = snap(((ev.clientY - startY) / g.slot) * 30);
       if (resize) {
@@ -1214,6 +1231,8 @@ function bindWeekGrid(root, g) {
       if (!moved) return; // plain click: opens the editor
       suppressClickUntil = Date.now() + 400;
       trash?.remove();
+      ghost?.remove();
+      el.classList.remove('drag-left');
       if (overTrash) return trashDropped(isSes, id, occ);
       const date = col.dataset.day;
       if (date === occ && ns === s0 && ne === e0) return render();

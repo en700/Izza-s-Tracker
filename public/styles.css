@@ -1103,7 +1103,7 @@ select.status.st-missed { background: color-mix(in srgb, var(--danger) 18%, var(
 textarea { tab-size: 2; }
 @media (max-width: 760px) { .note-tools button { padding: 6px 12px; font-size: 13px; } }
 
-.drag-trash { position: fixed; z-index: 65; width: 76px; height: 96px; border-radius: 18px; display: grid; place-items: center; align-content: center; gap: 6px;
+.drag-trash { position: fixed; z-index: 65; width: 84px; border-radius: 18px; display: grid; place-items: center; align-content: center; gap: 6px;
               background: var(--card); border: 2px dashed color-mix(in srgb, var(--danger) 55%, var(--line)); color: var(--danger); box-shadow: 0 10px 30px rgba(0,0,0,.18);
               font-size: 10.5px; font-weight: 700; text-align: center; pointer-events: none; animation: trash-in .2s var(--ease);
               transition: transform .15s var(--ease), background-color .15s var(--ease), color .15s var(--ease); }
@@ -1114,6 +1114,8 @@ textarea { tab-size: 2; }
 @keyframes trash-in { from { opacity: 0; transform: translateX(-24px) scale(.9); } }
 @keyframes trash-out { to { opacity: 0; transform: translateX(-24px) scale(.9); } }
 @keyframes trash-shake { 0%, 100% { transform: rotate(-8deg); } 50% { transform: rotate(8deg); } }
+.ev-float { position: fixed !important; z-index: 70; pointer-events: none; box-shadow: 0 10px 28px rgba(0,0,0,.25); transform: rotate(-2deg); }
+.ev.drag-left { opacity: .25; }
 .ev.to-trash, .pill-ghost.to-trash { opacity: .45; outline: 2px dashed var(--danger); outline-offset: 1px; }
 
 /* ---------- Responsive ---------- */
