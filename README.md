@@ -101,8 +101,8 @@ A password-protected timetable and school-year tracker for the dental hygiene pr
 - **Attendance** on every class in the week grid and the phone list: click the box once for ✓ *Attended*; click a marked box to
   change it to ◷ *Late* or ✕ *Missed* (or clear it). The class popup has the same three buttons. The Courses page shows
   "attended (%) · late · missed" per course; late counts as attended.
-- **✊ Fuck Doug Ford mode** (Settings). Swaps in the online timetables issued for Oct 26 – Nov 21, 2026 (all online except the DH 106 final
-  exam on Nov 18 in Classroom A & Lab; no pre-clinic or rad lab) in place of the official timetable for those four weeks, across every view, the deadline list,
+- **✊ Fuck Doug Ford mode** (Settings). Swaps in the timetables issued for Oct 26 – Dec 4, 2026 (online lectures, the DH 106 final exam on Nov 18 in
+  Classroom A & Lab, no pre-clinic, and in-person rad lab rotations from Nov 23) in place of the official timetable for those weeks, across every view, the deadline list,
   the Courses page and printouts. A red "✊ FDF mode" chip shows in the header while it's on. Turning it off brings the official
   timetable back; notes and ticks on both versions are kept. Your own entries and deadlines aren't changed.
 - **Drag to delete.** While you drag an event, a class or a due date in the week grid, a 🗑 bin appears at the left of the calendar;

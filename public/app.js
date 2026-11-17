@@ -116,7 +116,7 @@ const L1_SHORT = { ...COURSE_SHORT };
 const CUSTOM_COLORS = {};
 let BASE_L1 = null;
 const BASE_COURSE_NAMES = { DH102: 'Practice Environment I', DH103: 'Dental Anatomy', DH104: 'Client Management & Education', DH105: 'Anatomy, Pathology & Pathophysiology',
-  DH106: 'Radiography Theory', DH108: 'Microbiology & Infection Control', DH110: 'Professional Issues I' };
+  DH106: 'Radiography Theory', DH108: 'Microbiology & Infection Control', DH110: 'Professional Issues I', DH113: 'Radiography Lab' };
 const courseColor = (c) => (!c ? 'var(--PROGRAM)' : CUSTOM_COLORS[c] || (L1_SHORT[c] ? `var(--${c})` : 'var(--PROGRAM)'));
 const courseOptions = (sel) =>
   `<option value="">— None —</option>` +
@@ -170,9 +170,11 @@ function buildLevelSchedule(n, L, skip = new Set()) {
 }
 
 let levelSig = '', ovSig = '', LEVEL_SCHED = null;
-// "Fuck Doug Ford mode" (Settings): the online timetables issued for Oct 26 – Nov 7 and Nov 9 – 21, 2026 replace
+// "Fuck Doug Ford mode" (Settings): the timetables issued for Oct 26 – Nov 7, Nov 9 – 21, Nov 23 – 27 and Nov 30 – Dec 4, 2026 replace
 // the official Level 1 timetable for those dates everywhere on the site. [date, start, end, course, instructor, extra]
-const FDF = { from: '2026-10-26', to: '2026-11-21' };
+const FDF = { from: '2026-10-26', to: '2026-12-04' };
+// Rad lab rotations are in person, one group per 3-hour slot.
+const RAD = (g) => ({ type: 'lab', mode: 'in-person', group: { type: 'rad', values: [g] } });
 const FDF_SESSIONS = [
   ['2026-10-26', '08:00', '10:00', 'DH105', 'Mr. Metersky'], ['2026-10-26', '10:00', '11:30', 'DH106', 'Mr. Metersky'],
   ['2026-10-27', '08:00', '10:00', 'DH105', 'Mr. Metersky'], ['2026-10-27', '10:00', '11:30', 'DH106', 'Mr. Metersky'], ['2026-10-27', '12:00', '14:00', 'DH110', 'Ms. Steinberg'],
@@ -195,6 +197,24 @@ const FDF_SESSIONS = [
   ['2026-11-18', '08:00', '10:00', 'DH106', 'Mr. Metersky', { kind: 'exam', mode: 'in-person', detail: 'FINAL EXAM · Classroom A & Lab' }],
   ['2026-11-18', '12:30', '14:30', 'DH110', 'Ms. Steinberg'], ['2026-11-18', '14:30', '16:30', 'DH105', 'Mr. Metersky'],
   ['2026-11-20', '08:00', '11:00', 'DH103', 'Ms. Ramesha'], ['2026-11-20', '11:00', '13:00', 'DH105', 'Mr. Metersky'],
+  // Nov 23 – 27 (week 8)
+  ['2026-11-23', '08:00', '11:00', 'DH113', 'Ms. Moreno', RAD('A1')], ['2026-11-23', '11:00', '14:00', 'DH113', 'Ms. Moreno', RAD('A2')], ['2026-11-23', '14:30', '17:30', 'DH113', 'Ms. Moreno', RAD('A3')],
+  ['2026-11-24', '08:00', '11:00', 'DH113', 'Ms. Moreno', RAD('B3')], ['2026-11-24', '11:00', '14:00', 'DH113', 'Ms. Moreno', RAD('B4')],
+  ['2026-11-24', '15:30', '17:30', 'DH105', 'Mr. Metersky'], ['2026-11-24', '17:30', '19:30', 'DH105', 'Mr. Metersky'],
+  ['2026-11-25', '08:00', '11:00', 'DH113', 'Ms. Moreno', RAD('B1')], ['2026-11-25', '11:00', '14:00', 'DH113', 'Ms. Moreno', RAD('B2')], ['2026-11-25', '15:30', '17:30', 'DH105', 'Mr. Metersky'],
+  ['2026-11-26', '08:00', '10:00', 'DH108', 'Ms. Moreno'], ['2026-11-26', '10:00', '13:00', 'DH104', 'Ms. Moreno'],
+  ['2026-11-26', '14:00', '16:00', 'DH110', 'Ms. Steinberg'], ['2026-11-26', '16:00', '19:00', 'DH102', 'Ms. Steinberg'],
+  ['2026-11-27', '08:00', '10:00', 'DH105', 'Mr. Metersky'], ['2026-11-27', '10:00', '12:00', 'DH105', 'Mr. Metersky'],
+  ['2026-11-27', '13:30', '16:30', 'DH103', 'Ms. Ramesha'], ['2026-11-27', '16:30', '18:30', 'DH108', 'Ms. Moreno'],
+  // Nov 30 – Dec 4
+  ['2026-11-30', '08:00', '11:00', 'DH113', 'Ms. Moreno', RAD('A3')], ['2026-11-30', '11:00', '14:00', 'DH113', 'Ms. Moreno', RAD('A1')], ['2026-11-30', '14:30', '17:30', 'DH113', 'Ms. Moreno', RAD('A2')],
+  ['2026-12-01', '08:00', '11:00', 'DH113', 'Ms. Moreno', RAD('B2')], ['2026-12-01', '11:00', '14:00', 'DH113', 'Ms. Moreno', RAD('B1')], ['2026-12-01', '15:30', '18:30', 'DH102', 'Ms. Steinberg'],
+  ['2026-12-02', '08:00', '10:00', 'DH105', 'Mr. Metersky'], ['2026-12-02', '10:00', '12:00', 'DH105', 'Mr. Metersky'],
+  ['2026-12-02', '13:00', '15:00', 'DH108', 'Ms. Moreno'], ['2026-12-02', '15:00', '18:00', 'DH103', 'Ms. Ramesha'],
+  ['2026-12-03', '08:00', '11:00', 'DH113', 'Ms. Moreno', RAD('B4')], ['2026-12-03', '11:00', '14:00', 'DH113', 'Ms. Moreno', RAD('B3')],
+  ['2026-12-03', '15:30', '17:30', 'DH105', 'Mr. Metersky'], ['2026-12-03', '17:30', '19:30', 'DH105', 'Mr. Metersky'],
+  ['2026-12-04', '08:00', '10:00', 'DH108', 'Ms. Moreno'], ['2026-12-04', '10:00', '12:00', 'DH105', 'Mr. Metersky'],
+  ['2026-12-04', '12:30', '14:30', 'DH110', 'Ms. Steinberg'], ['2026-12-04', '14:30', '17:30', 'DH104', 'Ms. Moreno'],
 ].map(([date, start, end, code, who, extra]) => ({ id: `fdf_${date}_${code}_${start.replace(':', '')}`, src: 's', date, start, end, code, course: BASE_COURSE_NAMES[code], title: BASE_COURSE_NAMES[code],
   instructors: [who], mode: 'online', type: 'lecture', kind: 'class', fdf: true, ...(extra || {}) }));
 const fdfOn = () => !!data.settings.fdf && currentLevel() === 1;
@@ -729,7 +749,7 @@ function renderHeader() {
   btn.title = prog.remaining.length ? `Locked: finish your Level ${level} courses to unlock (${prog.remaining.length} left)` : `Go to Level ${level + 1}!`;
   document.documentElement.classList.toggle('fdf', fdfOn());
   $('#fdf-chip')?.remove();
-  if (fdfOn() && D.today() <= FDF.to) $('#levels').insertAdjacentHTML('afterend', `<button type="button" class="fdf-chip" id="fdf-chip" data-action="settings" title="Oct 26 – Nov 21 online timetable is on — tap to change in Settings">✊ FDF mode</button>`);
+  if (fdfOn() && D.today() <= FDF.to) $('#levels').insertAdjacentHTML('afterend', `<button type="button" class="fdf-chip" id="fdf-chip" data-action="settings" title="Oct 26 – Dec 4 timetable is on — tap to change in Settings">✊ FDF mode</button>`);
   $('#term-sub').textContent = `Level ${level} of ${levels} · ${fmtDate(t.start, { year: true }).replace(/^\w+, /, '')} – ${fmtDate(t.end, { year: true }).replace(/^\w+, /, '')}`;
   const start = D.sow(D.parse(t.start)), end = D.parse(t.end);
   const totalWeeks = Math.ceil((D.add(end, 1) - start) / (7 * 864e5));
@@ -2890,7 +2910,7 @@ function openSettings() {
       <div class="section-title" style="margin:6px 0 0">Entry types</div>
       <div class="type-preview">${typesList().map((t) => `<span class="qc-cat" style="--c:${esc(t.color)}">${t.icon} ${esc(t.name)}</span>`).join('')}<button type="button" class="btn sm" id="st-types">✎ Manage types</button></div>
       <label class="check small"><input type="checkbox" id="st-fun" ${st.fun !== false ? 'checked' : ''}> Hearts & stars burst out of some clicks ♥★</label>
-      <label class="switch-row fdf-set"><input type="checkbox" id="st-fdf" ${st.fdf ? 'checked' : ''}><span class="sw-track"></span><span><b>✊ Fuck Doug Ford mode</b><span class="muted small">Swaps in the online timetables for Oct 26 – Nov 21 (no pre-clinic or rad lab; DH 106 final exam Nov 18 in Classroom A & Lab). Every view, deadline list and printout follows it. Turn it off to go back to the official timetable — notes and ticks on both versions are kept.</span></span></label>
+      <label class="switch-row fdf-set"><input type="checkbox" id="st-fdf" ${st.fdf ? 'checked' : ''}><span class="sw-track"></span><span><b>✊ Fuck Doug Ford mode</b><span class="muted small">Swaps in the timetables issued for Oct 26 – Dec 4 (no pre-clinic; rad lab returns Nov 23; DH 106 final exam Nov 18 in Classroom A & Lab). Every view, deadline list and printout follows it. Turn it off to go back to the official timetable — notes and ticks on both versions are kept.</span></span></label>
       ${(() => { const n = Object.values(data.sessionMeta).filter((m) => m.ov?.hidden).length; return n ? `<div class="hol-set"><span class="small">🗑 ${n} class${n === 1 ? '' : 'es'} removed from the schedule</span><button type="button" class="btn sm" id="st-unhide">Restore all</button></div>` : ''; })()}
       <div class="hol-set"><label class="check small"><input type="checkbox" id="st-hol" ${st.holidays !== false ? 'checked' : ''}> Seasonal & holiday themes — the site dresses up by itself:
         ${HOLIDAYS.map((h) => `${h.icon} ${h.name} (${fmtDate('2026-' + h.from).replace(/^\w+, /, '')} – ${fmtDate('2026-' + h.to).replace(/^\w+, /, '')})`).join(', ')}</label></div>
@@ -2937,7 +2957,7 @@ function openSettings() {
   });
   $('#st-fdf').onchange = (e) => {
     data.settings.fdf = e.target.checked; data.settingsUpdatedAt = Date.now(); commit();
-    toast(e.target.checked ? '✊ Fuck Doug Ford mode on — Oct 26 – Nov 21 online timetable' : 'Back to the official timetable');
+    toast(e.target.checked ? '✊ Fuck Doug Ford mode on — Oct 26 – Dec 4 timetable' : 'Back to the official timetable');
   };
   $('#st-hol').onchange = (e) => { data.settings.holidays = e.target.checked; data.settingsUpdatedAt = Date.now(); commit(); };
   $('#st-fun').onchange = (e) => { data.settings.fun = e.target.checked; data.settingsUpdatedAt = Date.now(); commit({ rerender: false }); if (e.target.checked) burst(innerWidth / 2, innerHeight / 2); };
