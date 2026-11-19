@@ -3221,9 +3221,14 @@ function icsRecur(it, timed) {
   const r = it.recur, by = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
   const parts = r.freq === 'weekdays' ? ['FREQ=WEEKLY', 'BYDAY=MO,TU,WE,TH,FR']
     : [`FREQ=${r.freq.toUpperCase()}`, `INTERVAL=${r.interval || 1}`, ...(r.freq === 'weekly' && r.byDay?.length ? [`BYDAY=${r.byDay.map((d) => by[d]).join(',')}`] : [])];
-  if (r.until) parts.push(`UNTIL=${r.until.replace(/-/g, '')}${timed ? 'T235959' : ''}`);
-  return [`RRULE:${parts.join(';')}`, ...(it.exdates || []).map((d) => (timed ? `EXDATE:${d.replace(/-/g, '')}T${it.start.replace(':', '')}00` : `EXDATE;VALUE=DATE:${d.replace(/-/g, '')}`))];
+  if (r.until) parts.push(`UNTIL=${timed ? D.iso(D.add(D.parse(r.until), 1)).replace(/-/g, '') + 'T045959Z' : r.until.replace(/-/g, '')}`);
+  return [`RRULE:${parts.join(';')}`, ...(it.exdates || []).map((d) => (timed ? `EXDATE;TZID=America/Toronto:${d.replace(/-/g, '')}T${it.start.replace(':', '')}00` : `EXDATE;VALUE=DATE:${d.replace(/-/g, '')}`))];
 }
+// Times are written in Toronto time (with its daylight-saving rules) so every calendar app places them correctly.
+const ICS_TZ = ['BEGIN:VTIMEZONE', 'TZID:America/Toronto',
+  'BEGIN:DAYLIGHT', 'TZOFFSETFROM:-0500', 'TZOFFSETTO:-0400', 'TZNAME:EDT', 'DTSTART:19700308T020000', 'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU', 'END:DAYLIGHT',
+  'BEGIN:STANDARD', 'TZOFFSETFROM:-0400', 'TZOFFSETTO:-0500', 'TZNAME:EST', 'DTSTART:19701101T020000', 'RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU', 'END:STANDARD',
+  'END:VTIMEZONE'];
 function buildICS() {
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
   const icsEsc = (s) => String(s || '').replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/[,;]/g, (c) => '\\' + c);
@@ -3235,20 +3240,21 @@ function buildICS() {
     const desc = [modeLabel(s.mode), s.detail, s.group && groupLabel(s), s.instructors?.join(', ')].filter(Boolean).join('\n');
     ev.push(s.allDay
       ? ['BEGIN:VEVENT', `UID:${s.id}@level1`, `DTSTAMP:${stamp}`, `DTSTART;VALUE=DATE:${dt(s.date)}`, `DTEND;VALUE=DATE:${dt(D.iso(D.add(D.parse(s.date), 1)))}`, `SUMMARY:${icsEsc(s.title)}`, 'TRANSP:TRANSPARENT', 'END:VEVENT']
-      : ['BEGIN:VEVENT', `UID:${s.id}@level1`, `DTSTAMP:${stamp}`, `DTSTART:${dt(s.date, s.start)}`, `DTEND:${dt(s.date, s.end)}`, `SUMMARY:${icsEsc(summary)}`,
-        `DESCRIPTION:${icsEsc(desc)}`, `LOCATION:${icsEsc(modeLabel(s.mode))}`, 'END:VEVENT']);
+      : ['BEGIN:VEVENT', `UID:${s.id}@level1`, `DTSTAMP:${stamp}`, `DTSTART;TZID=America/Toronto:${dt(s.date, s.start)}`, `DTEND;TZID=America/Toronto:${dt(s.date, s.end)}`,
+        `SUMMARY:${icsEsc((s.cancelled ? 'CANCELLED: ' : '') + summary)}`, `DESCRIPTION:${icsEsc(desc)}`,
+        `LOCATION:${icsEsc(s.mode === 'in-person' && s.detail ? s.detail : modeLabel(s.mode))}`, ...(s.cancelled ? ['STATUS:CANCELLED'] : []), 'END:VEVENT']);
   }
   for (const it of data.items) {
     if (!it.date) continue;
     const timed = it.start;
     const end = it.end || (timed ? D.hm(Math.min(D.mins(it.start) + 30, 1439)) : '');
     ev.push(['BEGIN:VEVENT', `UID:${it.id}@level1`, `DTSTAMP:${stamp}`,
-      timed ? `DTSTART:${dt(it.date, it.start)}` : `DTSTART;VALUE=DATE:${dt(it.date)}`,
-      timed ? `DTEND:${dt(it.date, end)}` : `DTEND;VALUE=DATE:${dt(D.iso(D.add(D.parse(it.date), 1)))}`,
+      timed ? `DTSTART;TZID=America/Toronto:${dt(it.date, it.start)}` : `DTSTART;VALUE=DATE:${dt(it.date)}`,
+      timed ? `DTEND;TZID=America/Toronto:${dt(it.date, end)}` : `DTEND;VALUE=DATE:${dt(D.iso(D.add(D.parse(it.date), 1)))}`,
       `SUMMARY:${icsEsc((it.kind === 'assignment' ? 'DUE: ' : '') + (it.course ? codeLabel(it.course) + ' ' : '') + it.title)}`,
       `DESCRIPTION:${icsEsc(it.notes)}`, ...(it.location ? [`LOCATION:${icsEsc(it.location)}`] : []), ...icsRecur(it, timed), 'END:VEVENT']);
   }
-  return ['BEGIN:VCALENDAR', 'VERSION:2.0', `PRODID:-//${SCHED.term.program}//EN`, 'CALSCALE:GREGORIAN', `X-WR-CALNAME:${SCHED.term.program} — Level ${SCHED.term.level || 1}`, ...ev.flat(), 'END:VCALENDAR'].join('\r\n');
+  return ['BEGIN:VCALENDAR', 'VERSION:2.0', `PRODID:-//${SCHED.term.program}//EN`, 'CALSCALE:GREGORIAN', 'X-WR-TIMEZONE:America/Toronto', ...ICS_TZ, `X-WR-CALNAME:${SCHED.term.program} — Level ${SCHED.term.level || 1}`, ...ev.flat(), 'END:VCALENDAR'].join('\r\n');
 }
 
 /* ================================================================== */
