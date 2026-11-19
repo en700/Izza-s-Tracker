@@ -1118,6 +1118,20 @@ textarea { tab-size: 2; }
 .ev.drag-left { opacity: .25; }
 .ev.to-trash, .pill-ghost.to-trash { opacity: .45; outline: 2px dashed var(--danger); outline-offset: 1px; }
 
+.cx { gap: 14px !important; }
+.cx-dates { display: flex; gap: 6px; }
+.cx-checks { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.cx-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.cx-chip { border-color: var(--line); background: var(--card); color: var(--muted); }
+.cx-chip.on { border-color: var(--c); background: color-mix(in srgb, var(--c) 14%, var(--card)); color: var(--text); }
+.cx-count { font-size: 13px; color: var(--muted); }
+.cx-count b { color: var(--text); font-size: 15px; }
+.cx-acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.cx-acts a.btn { text-decoration: none; color: var(--text); }
+.cx-url { display: flex; gap: 6px; }
+.cx-url input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.cx-live { gap: 8px; }
+
 /* ---------- Responsive ---------- */
 @media (max-width: 1000px) {
   .cols-2 { grid-template-columns: 1fr; }

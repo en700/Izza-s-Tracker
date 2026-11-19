@@ -4,8 +4,9 @@ import { isAuthed, passwordConfigured } from './lib/auth.js';
 
 export const config = {
   // Icons and the web-app manifest are public: phones fetch them without the login cookie
-  // when the site is added to the home screen.
-  matcher: ['/((?!login|api/login|favicon\\.svg|robots\\.txt|manifest\\.webmanifest|apple-touch-icon|icons/).*)'],
+  // when the site is added to the home screen. /api/ical is the calendar feed: calendar apps can't sign in,
+  // so it checks its own secret token (see api/ical.js); its PUT checks the login cookie itself.
+  matcher: ['/((?!login|api/login|api/ical|favicon\\.svg|robots\\.txt|manifest\\.webmanifest|apple-touch-icon|icons/).*)'],
 };
 
 export default async function middleware(request) {

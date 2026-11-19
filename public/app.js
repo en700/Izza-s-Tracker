@@ -462,7 +462,7 @@ async function push() {
 function commit({ rerender = true } = {}) {
   data.updatedAt = Date.now();
   saveLocal();
-  if (sync.cloud) { setSync('saving', 'Saving…'); schedulePush(); }
+  if (sync.cloud) { setSync('saving', 'Saving…'); schedulePush(); scheduleFeed(); }
   if (rerender) render();
 }
 
@@ -2296,6 +2296,7 @@ function openMenu() {
       <button data-action="print"><span class="dr-ico">⎙</span>Print</button>
       <button data-action="settings"><span class="dr-ico">⚙</span>Settings</button>
       <button data-action="types"><span class="dr-ico">🏷</span>Entry types</button>
+      <button data-action="calexport"><span class="dr-ico">📅</span>Calendar export & sync</button>
     </nav>
     <div class="dr-foot"><span class="${$('#sync-status').className}">${esc($('#sync-status').textContent)}</span>
       <button class="btn sm" data-action="logout">Sign out</button></div>
@@ -2927,7 +2928,7 @@ function openSettings() {
       ${sync.cloud ? '<div id="st-backups" class="backups muted small">Loading backups…</div>' : ''}
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn" id="st-backup">Download backup (.json)</button>
-        <button class="btn" id="st-ics">Export calendar (.ics)</button>
+        <button class="btn" id="st-ics">📅 Calendar export & sync…</button>
         <button class="btn" data-action="import">Import / restore…</button>
       </div>
     </div>
@@ -2964,7 +2965,7 @@ function openSettings() {
   $$('[data-edit-level]', modal).forEach((b) => (b.onclick = () => openLevelWizard(+b.dataset.editLevel)));
   $$('[data-level]', modal).forEach((b) => b.addEventListener('click', () => closeModal()));
   $('#st-backup').onclick = () => download(`level1-backup-${D.today()}.json`, JSON.stringify({ ...data, exportedAt: new Date().toISOString() }, null, 1), 'application/json');
-  $('#st-ics').onclick = () => download('level1-schedule.ics', buildICS(), 'text/calendar');
+  $('#st-ics').onclick = () => openCalendarExport();
   if (sync.cloud) loadBackups();
 }
 
@@ -3229,13 +3230,63 @@ const ICS_TZ = ['BEGIN:VTIMEZONE', 'TZID:America/Toronto',
   'BEGIN:DAYLIGHT', 'TZOFFSETFROM:-0500', 'TZOFFSETTO:-0400', 'TZNAME:EDT', 'DTSTART:19700308T020000', 'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU', 'END:DAYLIGHT',
   'BEGIN:STANDARD', 'TZOFFSETFROM:-0400', 'TZOFFSETTO:-0500', 'TZNAME:EST', 'DTSTART:19701101T020000', 'RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU', 'END:STANDARD',
   'END:VTIMEZONE'];
-function buildICS() {
+// ---- Calendar export: what to include ----
+// { range, from, to, courses (codes, '_none' = no course; null = all), classes, exams, deadlines, events,
+//   types (entry type ids; null = all), otherGroups, cancelled, name }
+const ICS_DEFAULTS = { range: 'term', from: '', to: '', courses: null, classes: true, exams: true, deadlines: true, events: true,
+  types: null, otherGroups: false, cancelled: true, name: '' };
+const RANGE_LABELS = { term: 'Whole term', upcoming: 'From today on', thisWeek: 'This week', nextWeek: 'Next week', thisMonth: 'This month',
+  nextMonth: 'Next month', custom: 'Custom dates' };
+// Resolve a range (relative ones like "this month" are worked out on the day the calendar is built).
+function icsRange(o) {
+  const t = SCHED.term, today = D.today(), d = D.parse(today);
+  const monthOf = (y, m) => [D.iso(new Date(y, m, 1)), D.iso(new Date(y, m + 1, 0))];
+  switch (o.range) {
+    case 'upcoming': return [today, t.end];
+    case 'thisWeek': return [D.iso(D.sow(d)), D.iso(D.add(D.sow(d), 6))];
+    case 'nextWeek': return [D.iso(D.add(D.sow(d), 7)), D.iso(D.add(D.sow(d), 13))];
+    case 'thisMonth': return monthOf(d.getFullYear(), d.getMonth());
+    case 'nextMonth': return monthOf(d.getFullYear(), d.getMonth() + 1);
+    case 'custom': return [o.from || t.start, o.to || t.end];
+    default:
+      if (/^month:\d{4}-\d{2}$/.test(o.range)) { const [y, m] = o.range.slice(6).split('-').map(Number); return monthOf(y, m - 1); }
+      return [t.start, t.end];
+  }
+}
+function icsDescribe(o) {
+  const [a, b] = icsRange(o);
+  const what = [o.classes && 'classes', o.exams && 'exams & tests', o.deadlines && 'deadlines', o.events && 'your events'].filter(Boolean).join(', ') || 'nothing';
+  const rl = /^month:/.test(o.range) ? `${MON[+o.range.slice(11) - 1]} ${o.range.slice(6, 10)}` : RANGE_LABELS[o.range] || 'Whole term';
+  return `${rl} (${fmtDate(a)} – ${fmtDate(b)}) · ${what}${o.courses ? ` · ${o.courses.length} course${o.courses.length === 1 ? '' : 's'}` : ''}`;
+}
+// Which sessions and entries an export includes.
+function icsSelect(opts = {}) {
+  const o = { ...ICS_DEFAULTS, ...opts };
+  const [from, to] = icsRange(o);
+  const courseOk = (code) => !o.courses || o.courses.includes(code || '_none');
+  const sessions = SCHED.sessions.filter((s) => {
+    if (s.date < from || s.date > to || !courseOk(s.code)) return false;
+    if (!o.otherGroups && relevance(s) === 'other') return false;
+    if (s.cancelled && !o.cancelled) return false;
+    return s.kind === 'exam' || s.kind === 'test' ? o.exams : o.classes;
+  });
+  const items = data.items.filter((it) => {
+    if (!it.date || !courseOk(it.course)) return false;
+    if (o.types && !o.types.includes(it.type)) return false;
+    // Repeating entries count if any part of the series falls in the range.
+    const last = isRecurring(it) ? it.recur.until || '9999-12-31' : it.date;
+    if (it.date > to || last < from) return false;
+    return it.exam ? o.exams : it.task ? o.deadlines : o.events;
+  });
+  return { o, from, to, sessions, items };
+}
+function buildICS(opts = {}) {
+  const { o, sessions, items } = icsSelect(opts);
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
   const icsEsc = (s) => String(s || '').replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/[,;]/g, (c) => '\\' + c);
   const dt = (date, time) => date.replace(/-/g, '') + (time ? 'T' + time.replace(':', '') + '00' : '');
   const ev = [];
-  for (const s of SCHED.sessions) {
-    if (relevance(s) === 'other') continue;
+  for (const s of sessions) {
     const summary = `${s.code ? codeLabel(s.code) + ' ' : ''}${s.title}${s.kind === 'exam' ? ' — EXAM' : s.kind === 'test' ? ' — TEST' : ''}`;
     const desc = [modeLabel(s.mode), s.detail, s.group && groupLabel(s), s.instructors?.join(', ')].filter(Boolean).join('\n');
     ev.push(s.allDay
@@ -3244,8 +3295,7 @@ function buildICS() {
         `SUMMARY:${icsEsc((s.cancelled ? 'CANCELLED: ' : '') + summary)}`, `DESCRIPTION:${icsEsc(desc)}`,
         `LOCATION:${icsEsc(s.mode === 'in-person' && s.detail ? s.detail : modeLabel(s.mode))}`, ...(s.cancelled ? ['STATUS:CANCELLED'] : []), 'END:VEVENT']);
   }
-  for (const it of data.items) {
-    if (!it.date) continue;
+  for (const it of items) {
     const timed = it.start;
     const end = it.end || (timed ? D.hm(Math.min(D.mins(it.start) + 30, 1439)) : '');
     ev.push(['BEGIN:VEVENT', `UID:${it.id}@level1`, `DTSTAMP:${stamp}`,
@@ -3254,7 +3304,145 @@ function buildICS() {
       `SUMMARY:${icsEsc((it.kind === 'assignment' ? 'DUE: ' : '') + (it.course ? codeLabel(it.course) + ' ' : '') + it.title)}`,
       `DESCRIPTION:${icsEsc(it.notes)}`, ...(it.location ? [`LOCATION:${icsEsc(it.location)}`] : []), ...icsRecur(it, timed), 'END:VEVENT']);
   }
-  return ['BEGIN:VCALENDAR', 'VERSION:2.0', `PRODID:-//${SCHED.term.program}//EN`, 'CALSCALE:GREGORIAN', 'X-WR-TIMEZONE:America/Toronto', ...ICS_TZ, `X-WR-CALNAME:${SCHED.term.program} — Level ${SCHED.term.level || 1}`, ...ev.flat(), 'END:VCALENDAR'].join('\r\n');
+  const name = o.name || `${SCHED.term.program} — Level ${SCHED.term.level || 1}`;
+  return ['BEGIN:VCALENDAR', 'VERSION:2.0', `PRODID:-//${SCHED.term.program}//EN`, 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-TIMEZONE:America/Toronto', ...ICS_TZ,
+    `X-WR-CALNAME:${icsEsc(name)}`, 'REFRESH-INTERVAL;VALUE=DURATION:PT1H', 'X-PUBLISHED-TTL:PT1H', ...ev.flat(), 'END:VCALENDAR'].join('\r\n');
+}
+
+// ---- Live calendar link ----
+// The feed's token and filters live in settings (so every device keeps it up to date); the .ics itself is
+// built here and uploaded to /api/ical whenever what it contains changes.
+const feedUrl = (token) => `${location.origin}/api/ical?t=${token}`;
+const newFeedToken = () => [...crypto.getRandomValues(new Uint8Array(24))].map((b) => b.toString(16).padStart(2, '0')).join('');
+let feedTimer = 0;
+function scheduleFeed(delay = 4000) {
+  clearTimeout(feedTimer);
+  if (sync.cloud && data.settings.calFeed?.token) feedTimer = setTimeout(uploadFeed, delay);
+}
+async function uploadFeed(force = false) {
+  const cf = data.settings.calFeed;
+  if (!sync.cloud || !cf?.token) return;
+  const ics = buildICS({ ...cf.opts, name: cf.opts?.name || `${SCHED.term.program} (live)` });
+  const key = cf.token + ics.replace(/^DTSTAMP:.*$/gm, '').length + ':' + ics.replace(/^DTSTAMP:.*$/gm, '');
+  let last = '';
+  try { last = localStorage.getItem('l1s:feedkey') || ''; } catch {}
+  if (!force && last === key) return; // nothing on the calendar changed
+  const res = await fetch('/api/ical', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: cf.token, ics }) }).catch(() => null);
+  if (res?.ok) { try { localStorage.setItem('l1s:feedkey', key); } catch {} }
+  return !!res?.ok;
+}
+
+// ---- Export & sync panel ----
+function openCalendarExport() {
+  const t = SCHED.term;
+  const cf = data.settings.calFeed;
+  let o = { ...ICS_DEFAULTS, ...(cf?.opts || {}), name: '' };
+  const months = [];
+  for (let d = new Date(D.parse(t.start).getFullYear(), D.parse(t.start).getMonth(), 1); D.iso(d) <= t.end; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) {
+    months.push([`month:${d.getFullYear()}-${pad(d.getMonth() + 1)}`, `${MON[d.getMonth()]} ${d.getFullYear()}`]);
+  }
+  const codes = Object.keys(SCHED.courses);
+  const types = typesList();
+  const modal = openModal(`${modalHead('Calendar export & sync', 'Choose what goes into the calendar file — or keep an outside calendar up to date with a live link.')}
+    <div class="body cx">
+      <div class="grid-2">
+        <label class="field">Dates<select id="cx-range">
+          ${Object.entries(RANGE_LABELS).filter(([k]) => k !== 'custom').map(([k, n]) => `<option value="${k}">${n}</option>`).join('')}
+          <optgroup label="A month">${months.map(([k, n]) => `<option value="${k}">${n}</option>`).join('')}</optgroup>
+          <option value="custom">Custom dates…</option></select></label>
+        <div class="field cx-custom"><span class="form-label">From – to</span><div class="cx-dates"><input type="date" id="cx-from"><input type="date" id="cx-to"></div></div>
+      </div>
+      <div class="field"><span class="form-label">Include</span><div class="cx-checks">
+        ${[['classes', 'Classes & labs'], ['exams', 'Exams & tests'], ['deadlines', 'Deadlines (tasks)'], ['events', 'Your own events'], ['otherGroups', "Other groups' sessions"], ['cancelled', 'Cancelled classes']]
+          .map(([k, n]) => `<label class="check small"><input type="checkbox" data-cx="${k}"> ${n}</label>`).join('')}</div></div>
+      <div class="field"><span class="form-label">Courses <button type="button" class="link-btn" data-cxall="1">All</button> · <button type="button" class="link-btn" data-cxall="0">None</button></span>
+        <div class="cx-chips">${[...codes, '_none'].map((c) => `<button type="button" class="tk-chip cx-chip" data-cxc="${c}" style="--c:${c === '_none' ? 'var(--PERSONAL)' : courseColor(c)}">${c === '_none' ? 'No course' : codeLabel(c)}</button>`).join('')}</div></div>
+      <div class="field"><span class="form-label">Entry types <span class="muted">(your own entries only)</span> <button type="button" class="link-btn" data-cxtall="1">All</button> · <button type="button" class="link-btn" data-cxtall="0">None</button></span>
+        <div class="cx-chips">${types.map((ty) => `<button type="button" class="tk-chip cx-chip" data-cxt="${esc(ty.id)}" style="--c:${esc(ty.color)}">${ty.icon} ${esc(ty.name)}</button>`).join('')}</div></div>
+      <div class="cx-count" id="cx-count"></div>
+      <div class="cx-acts"><button type="button" class="btn primary" id="cx-dl">${ICON.plus.replace('M10 4v12M4 10h12', 'M10 3v10M6 9l4 4 4-4M4 16h12')} Download .ics</button></div>
+      <section class="ed-sec cx-live"><h3>Live calendar link</h3>
+        <div id="cx-live"></div>
+      </section>
+    </div>
+    <footer><button class="btn" data-close>Done</button></footer>`, { wide: true });
+  const draw = () => {
+    $('#cx-range', modal).value = o.range;
+    $('.cx-custom', modal).classList.toggle('hidden', o.range !== 'custom');
+    $('#cx-from', modal).value = o.from || t.start; $('#cx-to', modal).value = o.to || t.end;
+    $$('[data-cx]', modal).forEach((c) => (c.checked = !!o[c.dataset.cx]));
+    $$('[data-cxc]', modal).forEach((b) => b.classList.toggle('on', !o.courses || o.courses.includes(b.dataset.cxc)));
+    $$('[data-cxt]', modal).forEach((b) => b.classList.toggle('on', !o.types || o.types.includes(b.dataset.cxt)));
+    const { sessions, items } = icsSelect(o);
+    $('#cx-count', modal).innerHTML = `<b>${sessions.length + items.length}</b> events · ${esc(icsDescribe(o))}`;
+    drawLive();
+  };
+  const drawLive = () => {
+    const cfNow = data.settings.calFeed;
+    const box = $('#cx-live', modal);
+    if (!sync.cloud) { box.innerHTML = '<div class="muted small">The live link needs cloud sync (Turso) to be on.</div>'; return; }
+    if (!cfNow?.token) {
+      box.innerHTML = `<div class="muted small">Get a private link that Google Calendar, Apple Calendar or Outlook can subscribe to. New and changed events show up there automatically (Google re-checks every few hours; Apple can check every 5–15 minutes).</div>
+        <button type="button" class="btn primary" id="cx-on">Turn on live link with these choices</button>`;
+      $('#cx-on', modal).onclick = async () => {
+        data.settings.calFeed = { token: newFeedToken(), opts: { ...o, name: '' } };
+        data.settingsUpdatedAt = Date.now(); commit({ rerender: false });
+        await uploadFeed(true); drawLive(); toast('Live calendar link is on');
+      };
+      return;
+    }
+    const url = feedUrl(cfNow.token), webcal = url.replace(/^https?:/, 'webcal:');
+    const same = JSON.stringify({ ...ICS_DEFAULTS, ...cfNow.opts, name: '' }) === JSON.stringify({ ...o, name: '' });
+    box.innerHTML = `<div class="small">Your private link — anyone with it can see this calendar, so share it only with your calendar app:</div>
+      <div class="cx-url"><input type="text" readonly value="${esc(url)}" id="cx-url"><button type="button" class="btn" id="cx-copy">Copy</button></div>
+      <div class="cx-acts">
+        <a class="btn" href="https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcal)}" target="_blank" rel="noopener">Add to Google Calendar</a>
+        <a class="btn" href="${esc(webcal)}">Add to Apple Calendar / Outlook</a></div>
+      <div class="muted small">Live link shows: ${esc(icsDescribe({ ...ICS_DEFAULTS, ...cfNow.opts }))}</div>
+      <div class="cx-acts">
+        ${same ? '<span class="muted small">✓ Matches the choices above</span>' : '<button type="button" class="btn sm" id="cx-use">Use the choices above for the live link</button>'}
+        <button type="button" class="btn sm" id="cx-new" title="The old link stops working">New link</button>
+        <button type="button" class="btn sm danger" id="cx-off">Turn off</button></div>`;
+    $('#cx-copy', modal).onclick = async () => { try { await navigator.clipboard.writeText(url); toast('Link copied'); } catch { $('#cx-url', modal).select(); } };
+    $('#cx-use', modal)?.addEventListener('click', async () => {
+      data.settings.calFeed = { ...cfNow, opts: { ...o, name: '' } }; data.settingsUpdatedAt = Date.now(); commit({ rerender: false });
+      await uploadFeed(true); drawLive(); toast('Live link updated');
+    });
+    $('#cx-new', modal).onclick = async () => {
+      if (!confirm('Make a new link? Calendars subscribed to the old one stop updating, and you will need to add the new one.')) return;
+      data.settings.calFeed = { ...cfNow, token: newFeedToken() }; data.settingsUpdatedAt = Date.now(); commit({ rerender: false });
+      await uploadFeed(true); drawLive();
+    };
+    $('#cx-off', modal).onclick = async () => {
+      if (!confirm('Turn off the live link? Subscribed calendars stop updating.')) return;
+      await fetch('/api/ical', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: null }) }).catch(() => {});
+      data.settings.calFeed = null; data.settingsUpdatedAt = Date.now(); commit({ rerender: false });
+      try { localStorage.removeItem('l1s:feedkey'); } catch {}
+      drawLive();
+    };
+  };
+  $('#cx-range', modal).onchange = (e) => { o.range = e.target.value; draw(); };
+  $('#cx-from', modal).onchange = (e) => { o.from = e.target.value; draw(); };
+  $('#cx-to', modal).onchange = (e) => { o.to = e.target.value; draw(); };
+  $$('[data-cx]', modal).forEach((c) => (c.onchange = () => { o[c.dataset.cx] = c.checked; draw(); }));
+  const toggle = (key, all, v) => {
+    const cur = new Set(o[key] || all);
+    cur.has(v) ? cur.delete(v) : cur.add(v);
+    o[key] = cur.size === all.length ? null : [...cur];
+    draw();
+  };
+  $$('[data-cxc]', modal).forEach((b) => (b.onclick = () => toggle('courses', [...codes, '_none'], b.dataset.cxc)));
+  $$('[data-cxt]', modal).forEach((b) => (b.onclick = () => toggle('types', types.map((x) => x.id), b.dataset.cxt)));
+  $$('[data-cxall]', modal).forEach((b) => (b.onclick = () => { o.courses = b.dataset.cxall === '1' ? null : []; draw(); }));
+  $$('[data-cxtall]', modal).forEach((b) => (b.onclick = () => { o.types = b.dataset.cxtall === '1' ? null : []; draw(); }));
+  $('#cx-dl', modal).onclick = () => {
+    const [a, b] = icsRange(o);
+    const n = icsSelect(o);
+    if (!n.sessions.length && !n.items.length) return toast('Nothing to export with these choices');
+    download(`pookies-dh_${a}_to_${b}.ics`, buildICS(o), 'text/calendar');
+    toast(`Exported ${n.sessions.length + n.items.length} events`);
+  };
+  draw();
 }
 
 /* ================================================================== */
@@ -3771,6 +3959,7 @@ document.addEventListener('click', (e) => {
   else if (a === 'settings') openSettings();
   else if (a === 'import') openImport();
   else if (a === 'menu') openMenu();
+  else if (a === 'calexport') openCalendarExport();
   else if (a === 'logout') fetch('/api/logout', { method: 'POST' }).finally(() => location.replace('/login'));
 });
 document.addEventListener('change', (e) => {
@@ -4048,6 +4237,7 @@ function goToTodaysWeek() {
   if (launchToday) goToTodaysWeek();
   render();
   await pullRemote();
+  scheduleFeed(2500); // bring the live calendar link up to date with anything changed elsewhere
   seedDeadlines();
   // Syncing can switch the level being viewed, which moves the calendar; land back on today.
   if (launchToday && ensureLevel() && ui.view === 'week') goToTodaysWeek();

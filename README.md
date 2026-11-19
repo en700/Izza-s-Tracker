@@ -46,7 +46,13 @@ A password-protected timetable and school-year tracker for the dental hygiene pr
 - **Notes.** Free-form notes you can tag with a course, pin and search. Class-session notes are
   also listed here.
 - **Assignments, due dates, events, exams and reminders.** Each one can have a checklist,
-  a priority and file attachments. Use **Import** to load a `.ics` calendar (Brightspace/D2L,
+  a priority and file attachments. **Settings → Calendar export & sync** (also in the ☰ menu) builds a `.ics`
+  file from exactly what you pick: dates (whole term, from today, this/next week or month, any month, or custom dates), what to
+  include (classes, exams & tests, deadlines, your own events, other groups' sessions, cancelled classes), which courses and which
+  entry types. Times are in Toronto time. The same panel turns on a **live calendar link**: a private URL that Google Calendar,
+  Apple Calendar or Outlook can subscribe to, so new and changed events appear there by themselves (needs cloud sync; Google
+  re-checks every few hours, Apple as often as every 5 minutes). The link can be given its own choices, replaced with a new one
+  or turned off. Use **Import** to load a `.ics` calendar (Brightspace/D2L,
   Google, Outlook), a `.csv` file or a backup. Import marks anything already in your calendar (same day and a matching title, ignoring
   prefixes like "Assignment:", numbering and "- 10%"; or a test on a day the timetable already has one for that course) and anything
   listed twice in the file, and leaves those unticked so they aren't added twice. **Settings → Export calendar** downloads an `.ics`
@@ -186,6 +192,7 @@ api/login.js         POST password → signed HttpOnly cookie
 api/logout.js        clears the cookie
 api/data.js          GET/PUT synced user data (notes, tasks, checks, settings)
 api/files.js         attachment upload/download
+api/ical.js          live calendar feed (secret-link GET for calendar apps; signed-in PUT from the site)
 lib/auth.js          HMAC-signed session tokens (Web Crypto, Edge + Node)
 lib/store.js         Turso (libSQL HTTP) / Upstash storage + daily backups (+ local JSON file for dev)
 public/              the app (index.html, app.js, styles.css, schedule.json, login.html)
